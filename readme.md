@@ -56,7 +56,7 @@ var worker = new ProxyWorker('worker.js')
 
 // classic promise.then()
 worker.proxy.cpuIntenseFunction(...)
-	.then(result => console.log(result)
+    .then(result => console.log(result)
 
 // async/await variation
 var result = await worker.proxy.cpuIntenseFunction(...)
@@ -71,11 +71,11 @@ var imageArrayBuffer = await response.arrayBuffer()
 imageArrayBuffer = await worker.proxy.grayscale(imageArrayBuffer)
 imageArrayBuffer = await worker.proxy.sharpen(imageArrayBuffer, 2)
 if (resize)
-	imageArrayBuffer = await worker.proxy.resizeImage(imageArrayBuffer, 300, 200)
+    imageArrayBuffer = await worker.proxy.resizeImage(imageArrayBuffer, 300, 200)
 if (rotate)
-	imageArrayBuffer = await worker.proxy.rotateImage(imageArrayBuffer, 'right')
+    imageArrayBuffer = await worker.proxy.rotateImage(imageArrayBuffer, 'right')
 await fetch({
-	method: 'POST',
+    method: 'POST',
     body: imageArrayBuffer
 })
 console.log('image has been successfully downloaded, modified and reuploaded')
@@ -89,26 +89,26 @@ Proxies are being dynamically generated as you type so that `worker.proxy.deeply
 var worker = new ProxyWorker('worker.js')
 
 worker.proxy.deeply.nested.method([1,10,100])
-	.then(result => console.log(result === 11))
+    .then(result => console.log(result === 11))
 ```
 
 ``` js
 // worker.js
 
 var deeply = {
-	nested: {
-    	method(arg) {
-        	return arg[0] + arg[1]
+    nested: {
+        method(arg) {
+            return arg[0] + arg[1]
         }
     }
 }
 ```
 
-Note: You can avoid using proxies and instead use `worker.invokeTask(...)`
+Note: You can avoid using proxies and instead call `worker.invokeTask(...)`
 ```
 var promise = worker.invokeTask({
-	path: 'deeply.nested.method',
-	args: [1,10,100]
+    path: 'deeply.nested.method',
+    args: [1,10,100]
 })
 ```
 
@@ -221,15 +221,15 @@ pw.proxy.Decoder.myDecoder(...) // error
 ```
 // worker.js
 function hello(number, string) {
-	return `this is the result. Number: ${number}, String: ${string}`
+    return `this is the result. Number: ${number}, String: ${string}`
 }
 
 var Encoder = {
-	myEncoder(...) {...}
+    myEncoder(...) {...}
 }
 
 class Decoder {
-	static myDecoder(...) {...}
+    static myDecoder(...) {...}
 }
 
 // typeof hello === 'function'

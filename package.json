@@ -4,6 +4,15 @@
   "description": "Sugar & shims for simple multithreading in browser and node.js",
   "main": "index.js",
   "scripts": {},
+  "bugs": {
+    "url" : "https://github.com/MikeKovarik/fachman/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MikeKovarik/fachman.git"
+  },
+  "homepage": "https://mutiny.cz/fachman",
+  "keywords": ["worker", "webworkers", "threads", "multithreading", "multiplatform"],
   "author": "Mike Kovařík",
   "license": "MIT",
   "devDependencies": {

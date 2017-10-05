@@ -51,61 +51,39 @@ Each function call returns Promise because of the asynchronous nature of working
 That being said. async/await is now natively widely availabe so you can hop onto the unicorn and ride into the sunset.
 
 ``` js
-// main.js
-var worker = new ProxyWorker('worker.js')
+var pw = new ProxyWorker('worker.js')
 
 // classic promise.then()
-worker.proxy.cpuIntenseFunction(...)
+pw.proxy.cpuIntenseFunction(...)
     .then(result => console.log(result)
 
 // async/await variation
-var result = await worker.proxy.cpuIntenseFunction(...)
-console.log(result)
+var result = await pw.proxy.cpuIntenseFunction(...)
 ```
 
 Note: Don't forget to wrap `await` calls in `async function() {...}`
-
-``` js
-var response = await  fetch('myImage.jpg')
-var imageArrayBuffer = await response.arrayBuffer()
-imageArrayBuffer = await worker.proxy.grayscale(imageArrayBuffer)
-imageArrayBuffer = await worker.proxy.sharpen(imageArrayBuffer, 2)
-if (resize)
-    imageArrayBuffer = await worker.proxy.resizeImage(imageArrayBuffer, 300, 200)
-if (rotate)
-    imageArrayBuffer = await worker.proxy.rotateImage(imageArrayBuffer, 'right')
-await fetch({
-    method: 'POST',
-    body: imageArrayBuffer
-})
-console.log('image has been successfully downloaded, modified and reuploaded')
-```
 
 ### Packed with tons of sugar.
 Proxies are being dynamically generated as you type so that `worker.proxy.deeply.nested.method(...)` does not throw error, but resolves into call of `deeply.nested.method(...)` in your worker script and propagates result back to your main thread call.
 
 ``` js
 // main.js
-var worker = new ProxyWorker('worker.js')
-
-worker.proxy.deeply.nested.method([1,10,100])
+var pw = new ProxyWorker('worker.js')
+pw.proxy.deeply.nested.method([1,10,100])
     .then(result => console.log(result === 11))
 ```
 
 ``` js
 // worker.js
-
 var deeply = {
     nested: {
-        method(arg) {
-            return arg[0] + arg[1]
-        }
+        method: arg => arg[0] + arg[1]
     }
 }
 ```
 
 Note: You can avoid using proxies and instead call `worker.invokeTask(...)`
-```
+``` js
 var promise = worker.invokeTask({
     path: 'deeply.nested.method',
     args: [1,10,100]
@@ -115,19 +93,77 @@ var promise = worker.invokeTask({
 
 ### Batteries included.
 
-#### WebWorker shim for Node.js
-Node does not support WebWorker API and up until recently it was difficult to write multi threaded code (now you can at least.
-
 #### Autotransfer of memory between Workers.
-WebWorkers in the browsers allow one-time uni-directional sharing of chunks of memory from master to worker or from worker to master. That prevents costly cloning of memory. But developer has to explicitly define which objects to transfer through second parameter `transferables` in `webworker.postMessage({img: imgBuffer}, [imgBuffer])`. Since we're building on top of this API and hiding it away from you, fachman automatically tries to find transferables in your data and tells browser to transfer them over to worker.
+
+WebWorkers in the browsers allow one-time unidirectional sharing of chunks of memory from master to worker or from worker to master. That prevents costly cloning of the memory. But the developers have to explicitly define which objects to transfer through second parameter `transferables` in `webworker.postMessage({img: imgBuffer}, [imgBuffer])`. Since we're building on top of this API and hiding it away from you, fachman automatically tries to find transferables in your data and tells browser to transfer them over to worker.
 
 We believe this fits majority of usecases, but you can always opt out of this by setting `autoTransferArgs` option to `false`
 
 More about transferables on [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers#Passing_data_by_transferring_ownership_(transferable_objects))
 
-#### EventEmitter shim
+In the following example, you can see main thread fetching an image and then transfering in back and forth between worker which does some CPU intensive operations with the 
+
+``` js
+var response = await fetch('myImage.jpg')
+// Fetches an image as a #1 buffer 
+var arrayBuffer = await response.arrayBuffer()
+// Transfers original #1 buffer to worker and receives a new #2 buffer that was created inside worker and transfered from worker to the main thread.
+arrayBuffer = await worker.proxy.grayscale(arrayBuffer)
+// Transfers #2 buffer to worker and receives #3 buffer.
+arrayBuffer = await worker.proxy.sharpen(arrayBuffer, 1.8)
+// Transfers #3 buffer to worker and receives #4 buffer.
+if (resize)
+    arrayBuffer = await worker.proxy.resizeImage(arrayBuffer, 300, 200)
+// Transfers #2 buffer to worker and receives #5 buffer.
+if (rotate)
+    arrayBuffer = await worker.proxy.rotateImage(arrayBuffer, 'right')
+await fetch({
+    method: 'POST',
+    body: arrayBuffer
+})
+console.log('image has been successfully downloaded, modified and reuploaded')
+```
+
+To take this example even further, the ArrayBufer could be transformed into SharedArrayBuffer and operations that do not change the length of the buffer (grayscale and sharpen in this example) could edit the data directly inside the very same buffer (the same place in memory) they receive.
+
+``` js
+...
+var arrayBuffer = await response.arrayBuffer()
+// Copy #1 ArrayBuffer's data into new #2 SharedArrayBuffer that can reside in both threads.
+var sharedArrayBuffer = sharedArrayBufferFromArrayBuffer(arrayBuffer)
+// Pass refference to #2 SAB buffer to the worker and let it modify the memory of the SAB
+await worker.proxy.grayscale(sharedArrayBuffer)
+// Pass refference to #2 SAB buffer to the worker and let it modify the memory of the SAB
+await worker.proxy.sharpen(sharedArrayBuffer, 1.8)
+// sharedArrayBuffer is still the same object pointing to the same space in memory that has been changed twice.
+...
+```
+
+#### worker scope
+
+``` js
+self.on()
+self.emit()
+```
 
 *TO BE ELABORATED*
+
+#### WebWorker shim for Node.js
+
+Node does not support WebWorker API and up until recently it was difficult to write multi threaded code (now you can at least use the new `cluster` module, but that's not perfect either).
+
+*TO BE ELABORATED*
+
+``` js
+// ES modules style
+import {Worker} from 'fachman'
+// CJS style
+var Worker = require('fachman').Worker
+```
+
+#### EventEmitter shim
+
+Like any good Node or Node-like API, fachman's classes inherit from EventEmitter class. But EventEmitter is not available in browser and bundling the original would add another 8kb (minimized).
 
 ### Familiar API
 
@@ -210,7 +246,7 @@ Variables and functions defined outside of any block are automatically assigned 
 
 ES class declaractions don't create properties on the global object and are thus inaccessible without explicitly exposing them.
 
-```
+``` js
 // master.js
 var pw = new ProxyWorker('worker.js')
 
@@ -245,6 +281,14 @@ class Decoder {
 
 Apis for exposing such objects is planned.
 *Shhh*... in the meantime, dirty trick always get the job done `self.Decoder = Decoder`. But you didn't hear it from me.
+
+## Future plans
+
+### Streams
+
+Support for Node's Streams and upcoming browser's [WHATWG Streams spec](https://streams.spec.whatwg.org/) is planned. 
+
+If everything works out correctly, support will include [ReadableStream](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream), [WritableStream](https://developer.mozilla.org/en-US/docs/Web/API/WritableStream), `.pipeTo()`, `.pipeThrough()` as well as Node's equvalent [Readable](https://nodejs.org/api/stream.html#stream_class_stream_readable), [Writable](https://nodejs.org/api/stream.html#stream_class_stream_writable), `.pipe()`
 
 ## TODOs
 

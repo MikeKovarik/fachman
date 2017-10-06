@@ -1,7 +1,6 @@
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {EventEmitter} from './shims.mjs'
 import {routeMessageEvents} from './messaging.mjs'
-import {PRIVATE_EVENT_ONLINE, PRIVATE_EVENT_EXIT} from './util.mjs'
 
 
 if (isWorker) {
@@ -20,13 +19,13 @@ if (isWorker) {
 	self.on('task-start', executeTask)
 
 	// TODO: test if this is necessary (node's cluster worker fires this automatically)
-	self.postMessage(PRIVATE_EVENT_ONLINE)
+	self.emit('online')
 
 	// TODO: test if node can see termination of its child and only use this is browser.
 	let originalClose = self.close.bind(self)
 	self.close = () => {
-		// Notify master about impending close
-		self.postMessage(PRIVATE_EVENT_EXIT)
+		// Notify master about impending end of the thread
+		self.emit('exit', 0)
 		// Kill the thread
 		setTimeout(originalClose)
 	}

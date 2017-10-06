@@ -15,5 +15,8 @@ export function getCpuCores() {
 		return navigator.hardwareConcurrency || 1
 }
 
-export const PRIVATE_EVENT_ONLINE = '__thread_online__'
-export const PRIVATE_EVENT_EXIT   = '__thread_exit__'
+export function removeFromArray(array, item) {
+	var index = array.indexOf(item)
+	if (index !== -1)
+		array.splice(index, 1)
+}

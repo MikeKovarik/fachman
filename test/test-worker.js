@@ -2,7 +2,7 @@ importScripts('../index.js')
 
 
 // Utility wrapper for promisified setTimeout
-var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve), millis)
+var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
 
 self.addEventListener('message', e => {
 	if (e.data === 'echo')
@@ -16,12 +16,41 @@ self.on('custom-event', array => {
 })
 
 self.on('kys', async () => {
-	await timeout(300)
+	await timeout(100)
 	self.close()
 })
 
 function echo(arg) {
 	return arg
+}
+
+async function asyncEcho(arg, millis = 100) {
+	var now = Date.now()
+	await timeout(millis)
+	return arg
+}
+
+function syncHello(who = 'world') {
+	return `hello ${who}`
+}
+async function asyncHello(who = 'world') {
+	await timeout(100)
+	return `hello ${who}`
+}
+
+var deeply = {
+	nested: {
+		syncHello: syncHello,
+		asyncHello: asyncHello
+	}
+}
+
+function add(a, b) {
+	return a + b
+}
+async function compute(a, b) {
+	await timeout(100)
+	return add(a, b) * add(a, b)
 }
 
 function modifyView(original) {
@@ -41,27 +70,4 @@ function modifyArray(array) {
 function modifyString(string) {
 	console.log('modifyAtring', string)
 	return string
-}
-
-function syncHello(who = 'world') {
-	return `hello ${who}`
-}
-async function asyncHello(who = 'world') {
-	await timeout(200)
-	return `hello ${who}`
-}
-
-var deeply = {
-	nested: {
-		syncHello: syncHello,
-		asyncHello: asyncHello
-	}
-}
-
-function add(a, b) {
-	return a + b
-}
-async function compute(a, b) {
-	await timeout(200)
-	return add(a, b) * add(a, b)
 }

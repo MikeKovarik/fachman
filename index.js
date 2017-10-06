@@ -1,7 +1,7 @@
 (function (global, factory) {
 	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('events'), require('os'), require('child_process'), require('net')) :
 	typeof define === 'function' && define.amd ? define(['exports', 'events', 'os', 'child_process', 'net'], factory) :
-	(factory((global.fachman = {}),global.events$1,global.os,global.child_process,global.net));
+	(factory((global.fachman = {}),global.events,global.os,global.child_process,global.net));
 }(this, (function (exports,events$1,os,child_process,net) { 'use strict';
 
 events$1 = events$1 && events$1.hasOwnProperty('default') ? events$1['default'] : events$1;
@@ -21,10 +21,12 @@ function getCpuCores() {
 		return navigator.hardwareConcurrency || 1
 }
 
-const PRIVATE_EVENT_ONLINE = '__thread_online__';
-const PRIVATE_EVENT_EXIT   = '__thread_exit__';
+function removeFromArray(array, item) {
+	var index = array.indexOf(item);
+	if (index !== -1)
+		array.splice(index, 1);
+}
 
-// is true if it's the main UI thread in browser, or main thread in Node
 exports.isMaster = false;
 
 // is true it it's a WebWorker or a child spawned by Node master process.
@@ -52,7 +54,6 @@ if (typeof navigator === 'object') {
 		exports.isMaster = true;
 }
 
-// polyfill 'self'
 if (exports.isNode && typeof self === 'undefined')
 	global.self = global;
 
@@ -69,6 +70,8 @@ if (events$1) {
 } else {
 
 	// Resorting to our custom shim.
+	// Note: using unshift() (and looping backwards) instead of push() to prevent
+	//       issues with self-removing once() listeners
 	exports.EventEmitter = class EventEmitter {
 
 		constructor() {
@@ -82,11 +85,27 @@ if (events$1) {
 		}
 
 		emit(name, ...args) {
-			this._getEventCallbacks(name).forEach(cb => cb(...args));
+			var callbacks = this._getEventCallbacks(name);
+			var i = callbacks.length;
+			while (i--) {
+				callbacks[i](...args);
+			}
 		}
 
 		on(name, cb) {
-			this._getEventCallbacks(name).push(cb);
+			this._getEventCallbacks(name).unshift(cb);
+		}
+
+		once(name, cb) {
+			var oneTimeCb = (...args) => {
+				this.removeListener(name, oneTimeCb);
+				cb(...args);
+			};
+			this.on(name, oneTimeCb);
+		}
+
+		removeListener(name, cb) {
+			removeFromArray(this._getEventCallbacks(name), cb);
 		}
 
 	};
@@ -145,9 +164,11 @@ if (exports.isBrowser) {
 	// Note: the 'var' has to be there for it to become global var in this module's scope.
 	exports.Worker = class Worker extends BufferBasedMessenger {
 
-		constructor(workerPath) {
+		constructor(workerPath, options = {}) {
 			super();
 			var args = [workerPath, childIdentifyArg];
+			if (options.args)
+				args.push(...options.args);
 			// Reoute stdin, stdout and stderr to master and create separate fourth
 			// pipe for master-worker data exchange
 			var options = {
@@ -194,11 +215,6 @@ if (exports.isBrowser) {
 
 }
 
-// Routes messages from EventSource as events into EventEmitter and vice versa.
-// EE mimics simplicity of Node style Emitters and uses underlying WebWorker API
-// of posting messages. Events are carried in custom object {event, args} with name
-// and arguments. This shields events from EventSource implementation. Mainly allows
-// safe usage any event name, including 'message' in emitter.emit('message', data).
 function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
 
 	if (exports.isNode)
@@ -316,13 +332,13 @@ if (exports.isWorker) {
 	self.on('task-start', executeTask);
 
 	// TODO: test if this is necessary (node's cluster worker fires this automatically)
-	self.postMessage(PRIVATE_EVENT_ONLINE);
+	self.emit('online');
 
 	// TODO: test if node can see termination of its child and only use this is browser.
 	let originalClose = self.close.bind(self);
 	self.close = () => {
-		// Notify master about impending close
-		self.postMessage(PRIVATE_EVENT_EXIT);
+		// Notify master about impending end of the thread
+		self.emit('exit', 0);
 		// Kill the thread
 		setTimeout(originalClose);
 	};
@@ -480,26 +496,29 @@ class Cluster extends exports.EventEmitter {
 		}
 	}
 
-	async _createWorkers() {
+	_createWorkers() {
 		// List of ongoing tasks
 		this.taskQueue = [];
 		// Pool of ProxyWorker instances
 		this.workers = [];
 		this.idleWorkers = new Set;
 		this.runningWorkers = new Set;
-		// Wait to prevent blocking UI
-		if (this.startupDelay > 0)
-			await timeout(this.startupDelay);
-		// Start up the workers
-		await this._instantiateWorkers();
-		if (!this.canEnqueueTasks && this.runningWorkers.size > 0) {
-			// Queuing is disabled but some task are still queued because they were invoked
-			// before this worker was created (this is the first time it's idle).
-			// Dump all the tasks into the worker
-			var task;
-			while (task = this.taskQueue.shift())
-				this.forceExecuteTask(task);
-		}
+		this.ready = (async () => {
+			// Wait to prevent blocking UI
+			if (this.startupDelay > 0)
+				await timeout(this.startupDelay);
+			// Start up the workers
+			await this._instantiateWorkers();
+			if (!this.canEnqueueTasks && this.runningWorkers.size > 0) {
+				// Queuing is disabled but some task are still queued because they were invoked
+				// before this worker was created (this is the first time it's idle).
+				// Dump all the tasks into the worker
+				var task;
+				while (task = this.taskQueue.shift())
+					this.forceExecuteTask(task);
+			}
+			await Promise.all(this.workers.map(w => w.ready));
+		})();
 	}
 
 	async _instantiateWorkers() {
@@ -557,7 +576,8 @@ class Cluster extends exports.EventEmitter {
 	_onWorkerExit(wp) {
 		// Worker died or was closed
 		this.idleWorkers.delete(wp);
-		this.runningWorkers.add(wp);
+		this.runningWorkers.delete(wp);
+		removeFromArray(this.workers, wp);
 		// Similarly to Node cluster, each closed worker event is exposed to the whole cluster
 		this.emitLocally('exit', wp);
 	}
@@ -599,8 +619,20 @@ class ProxyWorker extends exports.EventEmitter {
 		// Bind methods to each instance
 		this.invokeTask = this.invokeTask.bind(this);
 		this._onTaskEnd = this._onTaskEnd.bind(this);
+		this._onExit = this._onExit.bind(this);
+		// The worker starts off as offline
+		this.online = false;
+		// Creating ready promise which resolves after first 'online' event, when worker is ready
+		this.ready = new Promise(resolve => {
+			// Warning: Don't try to wrap this into chaining promise. Worker loads synchronously
+			//          and synchronous EventEmitter callbacks would race each other over async Promise.
+			this.once('online', () => {
+				this.online = true;
+				resolve();
+			});
+		});
 		// List of resolvers and rejectors of unfinished promises (ongoing requests)
-		this.taskResolvers = new Map;
+		this._taskResolvers = new Map;
 		// we will open user worker script which will load this library
 		this.worker = new exports.Worker(this.workerPath);
 		// Start handling messages comming from worker
@@ -623,9 +655,9 @@ class ProxyWorker extends exports.EventEmitter {
 	// We are only handling responses to called (invoked) method from within.
 	// Resolver (or rejector) for given request ID is found and called with returned data (or error).
 	_onTaskEnd({id, status, payload}) {
-		if (!this.taskResolvers.has(id)) return
-		var {resolve, reject} = this.taskResolvers.get(id);
-		this.taskResolvers.delete(id);
+		if (!this._taskResolvers.has(id)) return
+		var {resolve, reject} = this._taskResolvers.get(id);
+		this._taskResolvers.delete(id);
 		this.runningTasks--;
 		if (status === true) {
 			// Execution ran ok and we a have a result.
@@ -653,33 +685,34 @@ class ProxyWorker extends exports.EventEmitter {
 		var {id, path, args, promise, resolvers} = task;
 		// Emit info about the task, most importantly, into the thread.
 		this.emit('task-start', {id, path, args});
-		this.taskResolvers.set(id, resolvers);
+		this._taskResolvers.set(id, resolvers);
 		return promise
 	}
 
+	// Kills worker thread and cancels all ongoing tasks
 	terminate() {
 		this.worker.terminate();
 		// Emitting event 'exit' to make it similar to Node's childproc & cluster
 		this.emitLocally('exit', 0);
 	}
 
-	// Alias for terminate()
-	close() {
+	// Alias for terminate(), mimicking Node ChildProccess API
+	kill() {
 		this.terminate();
 	}
 
 	_onExit(code) {
 		if (code === 0) {
 			// Task was closed gracefuly by either #terminate() or self.close() from within worker.
-			this.taskResolvers.forEach(({reject}) => reject());
+			this._taskResolvers.forEach(({reject}) => reject());
 		} else {
 			// Thread was abruptly killed. We might want to restart it and/or restart unfinished tasks.
 			// Note: This should not be happening to browser Workers, but only to node child processes.
 		}
-
+		this.online = false;
 	}
 
-	// Cleanup after
+	// Cleanup after terminate()
 	destroy() {
 		// TODO: remove all event listeners on both EventSource (Worker) and EventEmitter (this)
 		// TODO: hook this on 'exit' event. Note: be careful with exit codes and autorestart

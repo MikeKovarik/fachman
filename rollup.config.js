@@ -10,7 +10,6 @@ var globals = objectFromArray(nodeCoreModules)
 export default {
 	input: 'index.mjs',
 	output: {
-		sourcemap: true,
 		file: `index.js`,
 		format: 'umd',
 	},

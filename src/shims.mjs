@@ -2,6 +2,7 @@ import events from 'events'
 import child_process from 'child_process'
 import net from 'net'
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
+import {removeFromArray} from './util.mjs'
 
 
 // polyfill 'self'
@@ -21,6 +22,8 @@ if (events) {
 } else {
 
 	// Resorting to our custom shim.
+	// Note: using unshift() (and looping backwards) instead of push() to prevent
+	//       issues with self-removing once() listeners
 	EventEmitter = class EventEmitter {
 
 		constructor() {
@@ -34,11 +37,27 @@ if (events) {
 		}
 
 		emit(name, ...args) {
-			this._getEventCallbacks(name).forEach(cb => cb(...args))
+			var callbacks = this._getEventCallbacks(name)
+			var i = callbacks.length
+			while (i--) {
+				callbacks[i](...args)
+			}
 		}
 
 		on(name, cb) {
-			this._getEventCallbacks(name).push(cb)
+			this._getEventCallbacks(name).unshift(cb)
+		}
+
+		once(name, cb) {
+			var oneTimeCb = (...args) => {
+				this.removeListener(name, oneTimeCb)
+				cb(...args)
+			}
+			this.on(name, oneTimeCb)
+		}
+
+		removeListener(name, cb) {
+			removeFromArray(this._getEventCallbacks(name), cb)
 		}
 
 	}
@@ -97,9 +116,11 @@ if (isBrowser) {
 	// Note: the 'var' has to be there for it to become global var in this module's scope.
 	Worker = class Worker extends BufferBasedMessenger {
 
-		constructor(workerPath) {
+		constructor(workerPath, options = {}) {
 			super()
 			var args = [workerPath, childIdentifyArg]
+			if (options.args)
+				args.push(...options.args)
 			// Reoute stdin, stdout and stderr to master and create separate fourth
 			// pipe for master-worker data exchange
 			var options = {

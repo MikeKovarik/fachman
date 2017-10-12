@@ -1,4 +1,11 @@
-mocha.setup('bdd')
+var isBrowser = typeof window === 'object'
+
+if (isBrowser) {
+	mocha.setup('bdd')
+} else {
+	var chai = require('chai')
+	var fachman = require('../index.js')
+}
 
 var assert = chai.assert
 
@@ -406,10 +413,46 @@ describe('Cluster', () => {
 
 describe('self Worker', () => {
 
-	it('.close() should gracefuly close the worker from within', async () => {
+	if (isBrowser) {
+
+		it('process is shimmed', async () => {
+			assert.isFalse(true)
+		})
+
+		it('require() is alias for importScripts()', async () => {
+			assert.isFalse(true)
+		})
+
+	}
+
+	if (isNode) {
+
+		it('self.addEventListener() is shimmed', async () => {
+			assert.isFalse(true)
+		})
+
+		it('self.postMessage() is shimmed', async () => {
+			assert.isFalse(true)
+		})
+
+		it('importScripts() is alias for (multiple) require()', async () => {
+			assert.isFalse(true)
+		})
+
+	}
+
+	it('self.close() should gracefuly close the worker from within', async () => {
 		var pw = new ProxyWorker('test-worker.js')
-		// Emit that tells worker to trigget self.close() in 300ms
-		pw.emit('kys')
+		// Emit that tells worker to trigge self.close() in 300ms
+		pw.emit('kys-close')
+		await timeout(400)
+		isClosed(pw)
+	})
+
+	it('process.kill() should gracefuly close the worker from within', async () => {
+		var pw = new ProxyWorker('test-worker.js')
+		// Emit that tells worker to trigge process.kill() in 300ms
+		pw.emit('kys-process-kill')
 		await timeout(400)
 		isClosed(pw)
 	})
@@ -481,5 +524,6 @@ assert.property(tea, 'flavors');
 assert.lengthOf(tea.flavors, 3);
 */
 
-mocha.run()
+if (isBrowser)
+	mocha.run()
 

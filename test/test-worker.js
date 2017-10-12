@@ -15,9 +15,14 @@ self.on('custom-event', array => {
 	self.emit('custom-reply', array.join(' '))
 })
 
-self.on('kys', async () => {
+self.on('kys-close', async () => {
 	await timeout(100)
 	self.close()
+})
+
+self.on('kys-process-kill', async () => {
+	await timeout(100)
+	process.kill()
 })
 
 function echo(arg) {

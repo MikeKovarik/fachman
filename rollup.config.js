@@ -8,6 +8,7 @@ var nodeCoreModules = require('repl')._builtinLibs
 var globals = objectFromArray(nodeCoreModules)
 
 export default {
+	treeshake: false,
 	input: 'index.mjs',
 	output: {
 		file: `index.js`,

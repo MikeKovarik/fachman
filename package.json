@@ -1,9 +1,11 @@
 {
   "name": "fachman",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Sugar & shims for simple multithreading in browser and node.js",
-  "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w"
+  },
   "bugs": {
     "url" : "https://github.com/MikeKovarik/fachman/issues"
   },

@@ -1,17 +1,16 @@
 import events from 'events'
-import child_process from 'child_process'
+import cp from 'child_process'
 import net from 'net'
-import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
+import {isMaster, isWorker, isNode, isBrowser, childDetectArg} from './platform.mjs'
 import {removeFromArray} from './util.mjs'
+import {routeMessageEvents} from './messaging.mjs'
 
 
-// polyfill 'self'
-if (isNode && typeof self === 'undefined')
-	global.self = global
+// polyfill 'global'
+if (isBrowser && typeof global === 'undefined')
+	self.global = self
 
 
-// Custom tiny EventEmitter sim so that we don't have to rely on 3rd party package if its not present.
-// Mainly in browser.
 export var EventEmitter
 
 if (events) {
@@ -21,7 +20,8 @@ if (events) {
 
 } else {
 
-	// Resorting to our custom shim.
+	// Custom tiny EventEmitter sim so that we don't have to rely on 3rd party package if its not present.
+	// Mainly in browser.
 	// Note: using unshift() (and looping backwards) instead of push() to prevent
 	//       issues with self-removing once() listeners
 	EventEmitter = class EventEmitter {
@@ -68,103 +68,106 @@ if (events) {
 // WebWorker native class or shim for node's spawn
 export var Worker
 
-if (isBrowser) {
-
+if (isBrowser && !isWorker) {
+	// Export native browser's Worker class
 	Worker = self.Worker
+}
 
-} else if (isNode) {
-
-	class BufferBasedMessenger extends EventEmitter {
-
-		constructor(pipe) {
-			super()
-			if (pipe) {
-				this.thePipe = pipe
-				// if we have the pipe, we can start setting the pipe right away
-				this._create()
-			}
-		}
-
-		_create() {
-			this.addEventListener = this.on.bind(this)
-			this.removeEventListener = this.removeListener.bind(this)
-			// listen on data from master pipe, convert and expose them as 'message' event
-			this.thePipe.on('data', data => this._onBuffer(data))
-			// todo. handle errors
-			// todo. handle close event
-		}
-
-		_onBuffer(buffer) {
-			var data = JSON.parse(buffer.toString())
-			var message = {data}
-			// Note: the data in Workers API (and all browser events using addEventListener)
-			// are stored in 'data' property of the event
-			this.emit('message', message)
-			if (this.onmessage)
-				this.onmessage(message)
-		}
-
-		// this will always only receive 'message' events
-		postMessage(message) {
-			var json = JSON.stringify(message)
-			this.thePipe.write(json)
-		}
-
-	}
+if (isNode && !isWorker) {
 
 	// Quick & dirty shim for browser's Worker API.
 	// Note: the 'var' has to be there for it to become global var in this module's scope.
-	Worker = class Worker extends BufferBasedMessenger {
+	Worker = function Worker(workerPath, options = {}) {
+		options.args = options.args || []
+		var args = [workerPath, ...options.args, childDetectArg]
+		// Reroute stdin, stdout and stderr (0,1,2) to display logs in main process.
+		// Then create IPC channel for meesage exchange and any ammount of separate streams for piping.
+		var stdio = [0, 1, 2, 'ipc']
+		var channelCount = options.streams || 0
+		while (channelCount)
+			stdio.push('pipe')
 
-		constructor(workerPath, options = {}) {
-			super()
-			var args = [workerPath, childIdentifyArg]
-			if (options.args)
-				args.push(...options.args)
-			// Reoute stdin, stdout and stderr to master and create separate fourth
-			// pipe for master-worker data exchange
-			var options = {
-				stdio: [0, 1, 2, 'pipe']
-			}
-			this.proc = child_process.spawn(process.execPath, args, options)
-			// The data pipe is fourth stream (id 3)
-			this.thePipe = this.proc.stdio[3]
-			// Manually starting the setup of pipe communication (handler by parent class)
-			this._create()
-			/*
-			process.once('SIGINT', function (code) {
-				console.log('SIGINT received...')
-				server.close()
-			})
+		var child = cp.spawn(process.execPath, args, {stdio})
 
-			process.once('SIGTERM', function (code) {
-				console.log('SIGTERM received...')
-				server.close()
-			})
-			*/
+		/*
+		child.once('SIGINT', function (code) {
+			console.log('SIGINT received...')
+			server.close()
+		})
+
+		child.once('SIGTERM', function (code) {
+			console.log('SIGTERM received...')
+			server.close()
+		})
+		*/
+
+		child.postMessage = function(message) {
+			this.send(message)
 		}
 
-		terminate() {
-			this.proc.kill('SIGINT')
-			this.proc.kill('SIGTERM')
+		child.terminate = function() {
+			this.kill('SIGINT')
+			this.kill('SIGTERM')
 		}
 
+		child.on('error', err => {
+			if (child.onerror) child.onerror(err)
+		})
+
+		child.on('message', data => {
+			if (child.onmessage) child.onmessage({data})
+		})
+
+		return child
 	}
 
-	// Quick & dirty shim for messaging API used within Worker.
-	if (isWorker) {
-		// Connect to the master data pipe (id 3)
-		var masterPipe = new net.Socket({fd: 3})
-		var messenger = new BufferBasedMessenger(masterPipe)
-		self.addEventListener = messenger.addEventListener
-		self.removeEventListener = messenger.removeEventListener
-		self.postMessage = messenger.postMessage.bind(messenger)
-		self.close = () => {
-			console.log('TODO: not implemented. close worker')
-			process.exit(0)
-		}
-	}
+}
 
+
+if (isBrowser && isWorker) {
+	// Get or shim 'process' object used for ipc in child
+	if (self.process === undefined)
+		global.process = new EventEmitter
+
+	// Hook into onmessage/postMessage() Worker messaging API and start serving messages through
+	// shim of Node's 'process' and its .on()/.send()
+	// TODO: Make autoTransferArgs configurable from within worker as well.
+	//       For now it's hardcoded true (thus all worker data are transfered back to master)
+	routeMessageEvents(process, self, true)
+	// process.send is Node's IPC equivalent of Browser's postMesage()
+	process.send = message => self.postMessage(message)
+
+	// TODO: test if this is necessary (node's cluster worker fires this automatically)
+	process.emit('online')
+
+	// TODO: test if node can see termination of its child and only use this is browser.
+	let originalClose = self.close.bind(self)
+	// Create process.kill() and ovewrite close() in worker to notify parent about closing.
+	process.kill = self.close = () => {
+		// Notify master about impending end of the thread
+		process.emit('exit', 0)
+		// Kill the thread
+		setTimeout(originalClose)
+	}
+}
+
+// Quick & dirty shim for messaging API used within Worker.
+if (isNode && isWorker) {
+	// polyfill 'self'
+	if (isNode && typeof self === 'undefined')
+		global.self = global
+	// Polyfill *EventListener and postMessage methods on 'self', for IPC as available in native WebWorkers
+	self.addEventListener = process.on.bind(process)
+	self.removeEventListener = process.removeListener.bind(process)
+	self.postMessage = message => process.send(message)
+	// Close method to kill Worker thread
+	self.close = () => {
+		process.exit(0)
+	}
+	// 
+	self.importScripts = (...args) => {
+		args.forEach(require)
+	}
 }
 
 

@@ -1,32 +1,18 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('events'), require('os'), require('child_process'), require('net')) :
-	typeof define === 'function' && define.amd ? define(['exports', 'events', 'os', 'child_process', 'net'], factory) :
-	(factory((global.fachman = {}),global.events,global.os,global.child_process,global.net));
-}(this, (function (exports,events$1,os,child_process,net) { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('events'), require('child_process'), require('net'), require('os')) :
+	typeof define === 'function' && define.amd ? define(['exports', 'events', 'child_process', 'net', 'os'], factory) :
+	(factory((global.fachman = {}),global.events,global.child_process,global.net,global.os));
+}(this, (function (exports,events,cp,net,os) { 'use strict';
 
-events$1 = events$1 && events$1.hasOwnProperty('default') ? events$1['default'] : events$1;
-os = os && os.hasOwnProperty('default') ? os['default'] : os;
-child_process = child_process && child_process.hasOwnProperty('default') ? child_process['default'] : child_process;
+events = events && events.hasOwnProperty('default') ? events['default'] : events;
+cp = cp && cp.hasOwnProperty('default') ? cp['default'] : cp;
 net = net && net.hasOwnProperty('default') ? net['default'] : net;
+os = os && os.hasOwnProperty('default') ? os['default'] : os;
 
-var childIdentifArg = 'is-child-worker';
+var childDetectArg = 'is-child-worker';
 
-// Tiny promisified version of setTimeout
-var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis));
 
-function getCpuCores() {
-	if (exports.isNode)
-		return os.cpus().length || 1
-	else
-		return navigator.hardwareConcurrency || 1
-}
-
-function removeFromArray(array, item) {
-	var index = array.indexOf(item);
-	if (index !== -1)
-		array.splice(index, 1);
-}
-
+// is true if it's the main UI thread in browser, or main thread in Node
 exports.isMaster = false;
 
 // is true it it's a WebWorker or a child spawned by Node master process.
@@ -40,10 +26,12 @@ exports.isBrowser = false;
 
 if (typeof process === 'object' && process.versions.node) {
 	exports.isNode = true;
-	if (process.argv.includes(childIdentifArg))
+	if (process.argv.includes(childDetectArg)) {
+		process.argv = process.argv.slice(0, -1);
 		exports.isWorker = true;
-	else
+	} else {
 		exports.isMaster = true;
+	}
 }
 
 if (typeof navigator === 'object') {
@@ -54,167 +42,25 @@ if (typeof navigator === 'object') {
 		exports.isMaster = true;
 }
 
-if (exports.isNode && typeof self === 'undefined')
-	global.self = global;
+var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis));
 
+exports.MAX_THREADS = 0;
+if (exports.isNode)
+	exports.MAX_THREADS = os.cpus().length || 1;
+else
+	exports.MAX_THREADS = navigator.hardwareConcurrency || 1;
 
-// Custom tiny EventEmitter sim so that we don't have to rely on 3rd party package if its not present.
-// Mainly in browser.
-
-
-if (events$1) {
-
-	// Hooray. we have either native or 3rd party EventEmitter at our disposal.
-	exports.EventEmitter = events$1.EventEmitter;
-
-} else {
-
-	// Resorting to our custom shim.
-	// Note: using unshift() (and looping backwards) instead of push() to prevent
-	//       issues with self-removing once() listeners
-	exports.EventEmitter = class EventEmitter {
-
-		constructor() {
-			this._map = new Map;
-		}
-
-		_getEventCallbacks(name) {
-			if (!this._map.has(name))
-				this._map.set(name, []);
-			return this._map.get(name)
-		}
-
-		emit(name, ...args) {
-			var callbacks = this._getEventCallbacks(name);
-			var i = callbacks.length;
-			while (i--) {
-				callbacks[i](...args);
-			}
-		}
-
-		on(name, cb) {
-			this._getEventCallbacks(name).unshift(cb);
-		}
-
-		once(name, cb) {
-			var oneTimeCb = (...args) => {
-				this.removeListener(name, oneTimeCb);
-				cb(...args);
-			};
-			this.on(name, oneTimeCb);
-		}
-
-		removeListener(name, cb) {
-			removeFromArray(this._getEventCallbacks(name), cb);
-		}
-
-	};
-
+function removeFromArray(array, item) {
+	var index = array.indexOf(item);
+	if (index !== -1)
+		array.splice(index, 1);
 }
 
-
-// WebWorker native class or shim for node's spawn
-
-
-if (exports.isBrowser) {
-
-	exports.Worker = self.Worker;
-
-} else if (exports.isNode) {
-
-	class BufferBasedMessenger extends exports.EventEmitter {
-
-		constructor(pipe) {
-			super();
-			if (pipe) {
-				this.thePipe = pipe;
-				// if we have the pipe, we can start setting the pipe right away
-				this._create();
-			}
-		}
-
-		_create() {
-			this.addEventListener = this.on.bind(this);
-			this.removeEventListener = this.removeListener.bind(this);
-			// listen on data from master pipe, convert and expose them as 'message' event
-			this.thePipe.on('data', data => this._onBuffer(data));
-			// todo. handle errors
-			// todo. handle close event
-		}
-
-		_onBuffer(buffer) {
-			var data = JSON.parse(buffer.toString());
-			var message = {data};
-			// Note: the data in Workers API (and all browser events using addEventListener)
-			// are stored in 'data' property of the event
-			this.emit('message', message);
-			if (this.onmessage)
-				this.onmessage(message);
-		}
-
-		// this will always only receive 'message' events
-		postMessage(message) {
-			var json = JSON.stringify(message);
-			this.thePipe.write(json);
-		}
-
-	}
-
-	// Quick & dirty shim for browser's Worker API.
-	// Note: the 'var' has to be there for it to become global var in this module's scope.
-	exports.Worker = class Worker extends BufferBasedMessenger {
-
-		constructor(workerPath, options = {}) {
-			super();
-			var args = [workerPath, childIdentifyArg];
-			if (options.args)
-				args.push(...options.args);
-			// Reoute stdin, stdout and stderr to master and create separate fourth
-			// pipe for master-worker data exchange
-			var options = {
-				stdio: [0, 1, 2, 'pipe']
-			};
-			this.proc = child_process.spawn(process.execPath, args, options);
-			// The data pipe is fourth stream (id 3)
-			this.thePipe = this.proc.stdio[3];
-			// Manually starting the setup of pipe communication (handler by parent class)
-			this._create();
-			/*
-			process.once('SIGINT', function (code) {
-				console.log('SIGINT received...')
-				server.close()
-			})
-
-			process.once('SIGTERM', function (code) {
-				console.log('SIGTERM received...')
-				server.close()
-			})
-			*/
-		}
-
-		terminate() {
-			this.proc.kill('SIGINT');
-			this.proc.kill('SIGTERM');
-		}
-
-	};
-
-	// Quick & dirty shim for messaging API used within Worker.
-	if (exports.isWorker) {
-		// Connect to the master data pipe (id 3)
-		var masterPipe = new net.Socket({fd: 3});
-		var messenger = new BufferBasedMessenger(masterPipe);
-		self.addEventListener = messenger.addEventListener;
-		self.removeEventListener = messenger.removeEventListener;
-		self.postMessage = messenger.postMessage.bind(messenger);
-		self.close = () => {
-			console.log('TODO: not implemented. close worker');
-			process.exit(0);
-		};
-	}
-
-}
-
+// Routes messages from EventSource as events into EventEmitter and vice versa.
+// EE mimics simplicity of Node style Emitters and uses underlying WebWorker API
+// of posting messages. Events are carried in custom object {event, args} with name
+// and arguments. This shields events from EventSource implementation. Mainly allows
+// safe usage any event name, including 'message' in emitter.emit('message', data).
 function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
 
 	if (exports.isNode)
@@ -246,6 +92,8 @@ function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
 		// that potentially gets sent from outside of this module.
 		if (data.event)
 			eEmitter.emitLocally(data.event, ...data.args);
+		else
+			eEmitter.emitLocally('message', data);
 		// Hand the raw message over to onmessage property to align with Worker API
 		if (eEmitter.onmessage)
 			eEmitter.onmessage({data});
@@ -316,32 +164,179 @@ function isModifiableForTransfer(arg) {
 		|| arg instanceof Uint16Array
 }
 
-if (exports.isWorker) {
-	// Create EventEmitter for serving events from onmessage/postMessage Worker messaging API
-	let emitter = new exports.EventEmitter;
-	// Hook EventEmitter into self.onmessage and start handling messages.
+function ensureTransferability(arg) {
+	if (arg instanceof Uint8Array)
+		return arg.buffer
+	if (arg instanceof ArrayBuffer)
+		return arg
+}
+
+if (exports.isBrowser && typeof global === 'undefined')
+	self.global = self;
+
+
+;
+
+if (events) {
+
+	// Hooray. we have either native or 3rd party EventEmitter at our disposal.
+	exports.EventEmitter = events.EventEmitter;
+
+} else {
+
+	// Custom tiny EventEmitter sim so that we don't have to rely on 3rd party package if its not present.
+	// Mainly in browser.
+	// Note: using unshift() (and looping backwards) instead of push() to prevent
+	//       issues with self-removing once() listeners
+	exports.EventEmitter = class EventEmitter {
+
+		constructor() {
+			this._map = new Map;
+		}
+
+		_getEventCallbacks(name) {
+			if (!this._map.has(name))
+				this._map.set(name, []);
+			return this._map.get(name)
+		}
+
+		emit(name, ...args) {
+			var callbacks = this._getEventCallbacks(name);
+			var i = callbacks.length;
+			while (i--) {
+				callbacks[i](...args);
+			}
+		}
+
+		on(name, cb) {
+			this._getEventCallbacks(name).unshift(cb);
+		}
+
+		once(name, cb) {
+			var oneTimeCb = (...args) => {
+				this.removeListener(name, oneTimeCb);
+				cb(...args);
+			};
+			this.on(name, oneTimeCb);
+		}
+
+		removeListener(name, cb) {
+			removeFromArray(this._getEventCallbacks(name), cb);
+		}
+
+	};
+
+}
+
+
+// WebWorker native class or shim for node's spawn
+;
+
+if (exports.isBrowser && !exports.isWorker) {
+	// Export native browser's Worker class
+	exports.Worker = self.Worker;
+}
+
+if (exports.isNode && !exports.isWorker) {
+
+	// Quick & dirty shim for browser's Worker API.
+	// Note: the 'var' has to be there for it to become global var in this module's scope.
+	exports.Worker = function Worker(workerPath, options = {}) {
+		options.args = options.args || [];
+		var args = [workerPath, ...options.args, childDetectArg];
+		// Reroute stdin, stdout and stderr (0,1,2) to display logs in main process.
+		// Then create IPC channel for meesage exchange and any ammount of separate streams for piping.
+		var stdio = [0, 1, 2, 'ipc'];
+		var channelCount = options.streams || 0;
+		while (channelCount)
+			stdio.push('pipe');
+
+		var child = cp.spawn(process.execPath, args, {stdio});
+
+		/*
+		child.once('SIGINT', function (code) {
+			console.log('SIGINT received...')
+			server.close()
+		})
+
+		child.once('SIGTERM', function (code) {
+			console.log('SIGTERM received...')
+			server.close()
+		})
+		*/
+
+		child.postMessage = function(message) {
+			this.send(message);
+		};
+
+		child.terminate = function() {
+			this.kill('SIGINT');
+			this.kill('SIGTERM');
+		};
+
+		child.on('error', err => {
+			if (child.onerror) child.onerror(err);
+		});
+
+		child.on('message', data => {
+			if (child.onmessage) child.onmessage({data});
+		});
+
+		return child
+	};
+
+}
+
+
+if (exports.isBrowser && exports.isWorker) {
+	// Get or shim 'process' object used for ipc in child
+	if (self.process === undefined)
+		global.process = new exports.EventEmitter;
+
+	// Hook into onmessage/postMessage() Worker messaging API and start serving messages through
+	// shim of Node's 'process' and its .on()/.send()
 	// TODO: Make autoTransferArgs configurable from within worker as well.
 	//       For now it's hardcoded true (thus all worker data are transfered back to master)
-	routeMessageEvents(emitter, self, true);
-	// Extend worker 'self' scope with EventEmitter methods.
-	let descriptors = Object.getOwnPropertyDescriptors(exports.EventEmitter.prototype);
-	Object.keys(descriptors)
-		.filter(name => name !== 'constructor' && !name.startsWith('_'))
-		.forEach(key => self[key] = emitter[key].bind(emitter));
-	// Start listening from communication from master and handle tasks
-	self.on('task-start', executeTask);
+	routeMessageEvents(process, self, true);
+	// process.send is Node's IPC equivalent of Browser's postMesage()
+	process.send = message => self.postMessage(message);
 
 	// TODO: test if this is necessary (node's cluster worker fires this automatically)
-	self.emit('online');
+	process.emit('online');
 
 	// TODO: test if node can see termination of its child and only use this is browser.
 	let originalClose = self.close.bind(self);
-	self.close = () => {
+	// Create process.kill() and ovewrite close() in worker to notify parent about closing.
+	process.kill = self.close = () => {
 		// Notify master about impending end of the thread
-		self.emit('exit', 0);
+		process.emit('exit', 0);
 		// Kill the thread
 		setTimeout(originalClose);
 	};
+}
+
+// Quick & dirty shim for messaging API used within Worker.
+if (exports.isNode && exports.isWorker) {
+	// polyfill 'self'
+	if (exports.isNode && typeof self === 'undefined')
+		global.self = global;
+	// Polyfill *EventListener and postMessage methods on 'self', for IPC as available in native WebWorkers
+	self.addEventListener = process.on.bind(process);
+	self.removeEventListener = process.removeListener.bind(process);
+	self.postMessage = message => process.send(message);
+	// Close method to kill Worker thread
+	self.close = () => {
+		process.exit(0);
+	};
+	// 
+	self.importScripts = (...args) => {
+		args.forEach(require);
+	};
+}
+
+if (exports.isWorker) {
+	// Start listening from communication from master and handle tasks
+	process.on('task-start', executeTask);
 }
 
 async function executeTask(task) {
@@ -361,7 +356,7 @@ async function executeTask(task) {
 		message = message.replace(/theMethod/g, path);
 		payload = {name, message, stack};
 	}
-	self.emit('task-end', {id, status, payload});
+	process.emit('task-end', {id, status, payload});
 }
 
 function getMethod(path, scope = self) {
@@ -403,7 +398,6 @@ function createNestedProxy(target, onCall, path = []) {
 	return new Proxy(target, proxyProto)
 }
 
-// Default setting is optimized for high intensity tasks and load ballancing
 var defaultOptions = {
 	// By default each worker is executing only one task at a time. If more tasks are invoked
 	// than there are available worker threads, the new tasks will be queued and waiting for
@@ -447,7 +441,7 @@ class Cluster extends exports.EventEmitter {
 		Object.assign(this, options);
 		// Get available core/thread count.
 		if (!this.threads)
-			this.threads = getCpuCores();
+			this.threads = exports.MAX_THREADS;
 		// binding methods to this instance
 		this.invokeTask = this.invokeTask.bind(this);
 		this.emitLocally = this.emit.bind(this); // TODO
@@ -609,7 +603,7 @@ class ProxyWorker extends exports.EventEmitter {
 		return this.runningTasks === 0
 	}
 
-	constructor(workerPath, options) {
+	constructor(workerPath, options = {}) {
 		super();
 		// Apply options to this instance
 		Object.assign(this, defaultOptions);
@@ -634,13 +628,14 @@ class ProxyWorker extends exports.EventEmitter {
 		// List of resolvers and rejectors of unfinished promises (ongoing requests)
 		this._taskResolvers = new Map;
 		// we will open user worker script which will load this library
-		this.worker = new exports.Worker(this.workerPath);
-		// Start handling messages comming from worker
-		this.worker.onerror = e => {
-			// todo: handle errors
-			console.error('worker onerror', e);
-			console.error(e);
-		};
+		this.worker = new exports.Worker(this.workerPath, exports.isNode ? options : undefined);
+		//this.worker = new Worker(this.workerPath, isNode ? options : undefined, {type: 'module'})
+		// Show errors from worker. Disabled by default because browser does it and noe processes share std.
+		if (options.routeErrors) {
+			// TODO: handle errors
+			// Start handling messages comming from worker
+			this.worker.onerror = e => console.error('WORKER:', e);
+		}
 		// Process (resolve and/or expose) the the data
 		routeMessageEvents(this, this.worker, this.autoTransferArgs);
 		this.on('task-end', this._onTaskEnd);

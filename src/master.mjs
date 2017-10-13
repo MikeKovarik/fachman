@@ -1,4 +1,4 @@
-import {timeout, getCpuCores} from './util.mjs'
+import {timeout, MAX_THREADS} from './util.mjs'
 import {Worker, EventEmitter} from './shims.mjs'
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {createNestedProxy} from './nestedProxy.mjs'
@@ -50,7 +50,7 @@ export class Cluster extends EventEmitter {
 		Object.assign(this, options)
 		// Get available core/thread count.
 		if (!this.threads)
-			this.threads = getCpuCores()
+			this.threads = MAX_THREADS
 		// binding methods to this instance
 		this.invokeTask = this.invokeTask.bind(this)
 		this.emitLocally = this.emit.bind(this) // TODO
@@ -212,7 +212,7 @@ export class ProxyWorker extends EventEmitter {
 		return this.runningTasks === 0
 	}
 
-	constructor(workerPath, options) {
+	constructor(workerPath, options = {}) {
 		super()
 		// Apply options to this instance
 		Object.assign(this, defaultOptions)
@@ -237,12 +237,13 @@ export class ProxyWorker extends EventEmitter {
 		// List of resolvers and rejectors of unfinished promises (ongoing requests)
 		this._taskResolvers = new Map
 		// we will open user worker script which will load this library
-		this.worker = new Worker(this.workerPath)
-		// Start handling messages comming from worker
-		this.worker.onerror = e => {
-			// todo: handle errors
-			console.error('worker onerror', e)
-			console.error(e)
+		this.worker = new Worker(this.workerPath, isNode ? options : undefined)
+		//this.worker = new Worker(this.workerPath, isNode ? options : undefined, {type: 'module'})
+		// Show errors from worker. Disabled by default because browser does it and noe processes share std.
+		if (options.routeErrors) {
+			// TODO: handle errors
+			// Start handling messages comming from worker
+			this.worker.onerror = e => console.error('WORKER:', e)
 		}
 		// Process (resolve and/or expose) the the data
 		routeMessageEvents(this, this.worker, this.autoTransferArgs)

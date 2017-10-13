@@ -133,14 +133,21 @@ describe('ProxyWorker', () => {
 		before(async () => pw = new ProxyWorker('test-worker.js'))
 		after(async () => pw.terminate())
 
-		it(`raw .postMessage() / .addEventListener('message')`, done => {
-			pw.worker.postMessage('echo')
+		it(`raw self.postMessage() / self.addEventListener('message')`, done => {
+			pw.worker.postMessage('hello-self')
 			pw.worker.addEventListener('message', e => {
-				if (e.data === 'hello from worker') done()
+				if (e.data === 'hello from self') done()
 			})
 		})
 
-		it(`EventEmitter .emit() / .on()`, done => {
+		it(`raw process.send() / process.on('message')`, done => {
+			pw.worker.send('hello-process')
+			pw.worker.on('message', e => {
+				if (e.data === 'hello from process') done()
+			})
+		})
+
+		it(`EventEmitter process .emit() / .on()`, done => {
 			pw.emit('custom-event', ['hello', 'worker'])
 			pw.on('custom-reply', data => {
 				if (data === 'hello master') done()
@@ -411,22 +418,68 @@ describe('Cluster', () => {
 })
 
 
-describe('self Worker', () => {
+describe('process', () => {
 
-	if (isBrowser) {
+	var workerPath = 'test-worker.js'
+	var pw
+/*
+	before(done => {
+		pw = new ProxyWorker(workerPath)
+		pw.process.once('exit', code => {
+			exitCode = code
+			done()
+		})
+	})
+	it('exit code should be zero', () => {
+		assert.equal(exitCode, 0)
+	})
+*/
 
-		it('process is shimmed', async () => {
-			assert.isFalse(true)
+	if (isBrowser) describe('browser Worker', () => {
+		var pw
+		before(async () => pw = new ProxyWorker(workerPath))
+		after(async () => pw.terminate())
+
+		it('process is shimmed', done => {
+			pw.worker.postMessage({typeof: 'process'})
+			pw.once('message', ({result}) => {
+				var type = result
+				assert.equal(result, 'object')
+				done()
+			})
 		})
 
-		it('require() is alias for importScripts()', async () => {
+		//it('process is shimmed', async () => {
+		//	var type = await pw.proxy.getType('process')
+		//	assert.equals(type, 'object')
+		//})
+
+		/*it('require() is alias for importScripts()', async () => {
 			assert.isFalse(true)
+		})*/
+	})
+
+	if (isNode) describe('node ChildProcess', () => {
+		var pw
+		before(async () => pw = new ProxyWorker(workerPath))
+		after(async () => pw.terminate())
+
+		it('self is shimmed', done => {
+			pw.worker.send({typeof: 'self'})
+			pw.once('message', ({result}) => {
+				var type = {result}
+				assert.equal(result, 'object')
+				done()
+			})
 		})
 
-	}
-
-	if (isNode) {
-
+		//it('self is shimmed', async () => {
+		//	console.log('before')
+		//	var type = await pw.proxy.getType('self')
+		//	console.log('after')
+		//	assert.equals(type, 'object')
+		//})
+/*
 		it('self.addEventListener() is shimmed', async () => {
 			assert.isFalse(true)
 		})
@@ -437,12 +490,11 @@ describe('self Worker', () => {
 
 		it('importScripts() is alias for (multiple) require()', async () => {
 			assert.isFalse(true)
-		})
-
-	}
+		})*/
+	})
 
 	it('self.close() should gracefuly close the worker from within', async () => {
-		var pw = new ProxyWorker('test-worker.js')
+		var pw = new ProxyWorker(workerPath)
 		// Emit that tells worker to trigge self.close() in 300ms
 		pw.emit('kys-close')
 		await timeout(400)
@@ -450,7 +502,7 @@ describe('self Worker', () => {
 	})
 
 	it('process.kill() should gracefuly close the worker from within', async () => {
-		var pw = new ProxyWorker('test-worker.js')
+		var pw = new ProxyWorker(workerPath)
 		// Emit that tells worker to trigge process.kill() in 300ms
 		pw.emit('kys-process-kill')
 		await timeout(400)

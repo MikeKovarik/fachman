@@ -37,6 +37,8 @@ export function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
 		// that potentially gets sent from outside of this module.
 		if (data.event)
 			eEmitter.emitLocally(data.event, ...data.args)
+		else
+			eEmitter.emitLocally('message', data)
 		// Hand the raw message over to onmessage property to align with Worker API
 		if (eEmitter.onmessage)
 			eEmitter.onmessage({data})

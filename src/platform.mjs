@@ -1,4 +1,4 @@
-import {childIdentifArg} from './util.mjs'
+export var childDetectArg = 'is-child-worker'
 
 
 // is true if it's the main UI thread in browser, or main thread in Node
@@ -15,10 +15,12 @@ export var isBrowser = false
 
 if (typeof process === 'object' && process.versions.node) {
 	isNode = true
-	if (process.argv.includes(childIdentifArg))
+	if (process.argv.includes(childDetectArg)) {
+		process.argv = process.argv.slice(0, -1)
 		isWorker = true
-	else
+	} else {
 		isMaster = true
+	}
 }
 
 if (typeof navigator === 'object') {

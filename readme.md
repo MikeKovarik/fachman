@@ -210,9 +210,15 @@ Fachman mimics APIs, events and general shape of both Worker class from WebWorke
 
 ### Properties
 
-`proxy`
+`proxy` *Proxy*
+
+`ready` *Promise*
+
+`worker` *Worker*
 
 `online`
+
+`running`
 
 `idle`
 
@@ -256,6 +262,14 @@ Worker has finished processing task and has returned result or error.
 `new Cluster([workerPath], workerOptions)`
 
 `new Cluster(workerPath, [threads])`
+
+### Properties
+
+`proxy` *Proxy*
+
+`ready` *Promise*
+
+`running`
 
 ### Methods
 

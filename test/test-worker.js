@@ -1,29 +1,72 @@
-importScripts('../index.js')
+var customImport = typeof self === 'object' ? importScripts : require
+customImport('../index.js')
 
 
 // Utility wrapper for promisified setTimeout
 var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
 
-self.addEventListener('message', e => {
-	if (e.data === 'echo')
-		self.postMessage('hello from worker')
-})
+var isBrowser = typeof navigator === 'object'
+var isNode = typeof process === 'object' && process.versions && process.versions.node
 
-self.on('custom-event', array => {
+;(() => {
+	if (isBrowser) {
+		self.addEventListener('message', e => onBasicTestingMessage(e.data))
+		var reply = self.postMessage.bind(self)
+	}
+	if (isNode) {
+		process.on('message', onBasicTestingMessage)
+		var reply = process.send.bind(process)
+	}
+	function onBasicTestingMessage(data) {
+		if (data.typeof) {
+			reply({result: typeof walkPath(data.typeof)})
+		}
+	}
+})()
+
+// WebWorker way of passing raw messages
+self.addEventListener('message', e => {
+	if (e.data === 'hello-self')
+		self.postMessage('hello from self')
+})
+// Node IPC way of passing raw messages
+process.on('message', data => {
+	if (data === 'helo-process')
+		process.send('hello from process')
+})
+// Node like 
+
+process.on('custom-event', array => {
 	array.pop()
 	array.push('master')
-	self.emit('custom-reply', array.join(' '))
+	process.emit('custom-reply', array.join(' '))
 })
 
-self.on('kys-close', async () => {
+process.on('kys-close', async () => {
 	await timeout(100)
-	self.close()
+	close()
 })
 
-self.on('kys-process-kill', async () => {
+process.on('kys-process-kill', async () => {
 	await timeout(100)
 	process.kill()
 })
+
+function walkPath(path, scope = self) {
+	if (path.includes('.')) {
+		var sections = path.split('.')
+		var section
+		while (section = sections.shift())
+			scope = scope[section]
+		return scope
+	} else {
+		return scope[path]
+	}
+}
+function getTypeOf(path) {
+	console.log('getTypeOf', path)
+	return typeof walkPath(path)
+}
 
 function echo(arg) {
 	return arg

@@ -1,5 +1,6 @@
 import {timeout, MAX_THREADS} from './util.mjs'
-import {Worker, EventEmitter} from './shims.mjs'
+import {EventEmitter} from './shims.mjs'
+import MultiPlatformWorker from './MultiPlatformWorker.mjs'
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {createNestedProxy} from './nestedProxy.mjs'
 import {routeMessageEvents} from './messaging.mjs'
@@ -237,8 +238,8 @@ export class ProxyWorker extends EventEmitter {
 		// List of resolvers and rejectors of unfinished promises (ongoing requests)
 		this._taskResolvers = new Map
 		// we will open user worker script which will load this library
-		this.worker = new Worker(this.workerPath, isNode ? options : undefined)
-		//this.worker = new Worker(this.workerPath, isNode ? options : undefined, {type: 'module'})
+		this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined)
+		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
 		// Show errors from worker. Disabled by default because browser does it and noe processes share std.
 		if (options.routeErrors) {
 			// TODO: handle errors
@@ -292,19 +293,14 @@ export class ProxyWorker extends EventEmitter {
 		this._taskResolvers.set(id, resolvers)
 		return promise
 	}
-
+/*
 	// Kills worker thread and cancels all ongoing tasks
 	terminate() {
 		this.worker.terminate()
 		// Emitting event 'exit' to make it similar to Node's childproc & cluster
 		this.emitLocally('exit', 0)
 	}
-
-	// Alias for terminate(), mimicking Node ChildProccess API
-	kill() {
-		this.terminate()
-	}
-
+*/
 	_onExit(code) {
 		if (code === 0) {
 			// Task was closed gracefuly by either #terminate() or self.close() from within worker.

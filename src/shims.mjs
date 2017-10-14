@@ -1,7 +1,6 @@
 import events from 'events'
-import cp from 'child_process'
 import net from 'net'
-import {isMaster, isWorker, isNode, isBrowser, childDetectArg} from './platform.mjs'
+import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {removeFromArray} from './util.mjs'
 import {routeMessageEvents} from './messaging.mjs'
 
@@ -24,101 +23,38 @@ if (events) {
 	// Mainly in browser.
 	// Note: using unshift() (and looping backwards) instead of push() to prevent
 	//       issues with self-removing once() listeners
-	EventEmitter = class EventEmitter {
-
-		constructor() {
-			this._map = new Map
-		}
-
-		_getEventCallbacks(name) {
-			if (!this._map.has(name))
-				this._map.set(name, [])
-			return this._map.get(name)
-		}
-
-		emit(name, ...args) {
-			var callbacks = this._getEventCallbacks(name)
-			var i = callbacks.length
-			while (i--) {
-				callbacks[i](...args)
-			}
-		}
-
-		on(name, cb) {
-			this._getEventCallbacks(name).unshift(cb)
-		}
-
-		once(name, cb) {
-			var oneTimeCb = (...args) => {
-				this.removeListener(name, oneTimeCb)
-				cb(...args)
-			}
-			this.on(name, oneTimeCb)
-		}
-
-		removeListener(name, cb) {
-			removeFromArray(this._getEventCallbacks(name), cb)
-		}
-
+	EventEmitter = function EventEmitter() {
+		this._map = new Map
 	}
 
-}
+	EventEmitter.prototype._getEventCallbacks = function(name) {
+		if (!this._map.has(name))
+			this._map.set(name, [])
+		return this._map.get(name)
+	}
 
-
-// WebWorker native class or shim for node's spawn
-export var Worker
-
-if (isBrowser && !isWorker) {
-	// Export native browser's Worker class
-	Worker = self.Worker
-}
-
-if (isNode && !isWorker) {
-
-	// Quick & dirty shim for browser's Worker API.
-	// Note: the 'var' has to be there for it to become global var in this module's scope.
-	Worker = function Worker(workerPath, options = {}) {
-		options.args = options.args || []
-		var args = [workerPath, ...options.args, childDetectArg]
-		// Reroute stdin, stdout and stderr (0,1,2) to display logs in main process.
-		// Then create IPC channel for meesage exchange and any ammount of separate streams for piping.
-		var stdio = [0, 1, 2, 'ipc']
-		var channelCount = options.streams || 0
-		while (channelCount)
-			stdio.push('pipe')
-
-		var child = cp.spawn(process.execPath, args, {stdio})
-
-		/*
-		child.once('SIGINT', function (code) {
-			console.log('SIGINT received...')
-			server.close()
-		})
-
-		child.once('SIGTERM', function (code) {
-			console.log('SIGTERM received...')
-			server.close()
-		})
-		*/
-
-		child.postMessage = function(message) {
-			this.send(message)
+	EventEmitter.prototype.emit = function(name, ...args) {
+		var callbacks = this._getEventCallbacks(name)
+		var i = callbacks.length
+		while (i--) {
+			callbacks[i](...args)
 		}
+	}
 
-		child.terminate = function() {
-			this.kill('SIGINT')
-			this.kill('SIGTERM')
+	EventEmitter.prototype.on = function(name, cb) {
+		this._getEventCallbacks(name).unshift(cb)
+	}
+
+	EventEmitter.prototype.once = function(name, cb) {
+		var oneTimeCb = (...args) => {
+			this.removeListener(name, oneTimeCb)
+			cb(...args)
 		}
+		this.on(name, oneTimeCb)
+	}
 
-		child.on('error', err => {
-			if (child.onerror) child.onerror(err)
-		})
-
-		child.on('message', data => {
-			if (child.onmessage) child.onmessage({data})
-		})
-
-		return child
+	EventEmitter.prototype.removeListener = function(name, cb) {
+		removeFromArray(this._getEventCallbacks(name), cb)
 	}
 
 }
@@ -134,7 +70,7 @@ if (isBrowser && isWorker) {
 	// TODO: Make autoTransferArgs configurable from within worker as well.
 	//       For now it's hardcoded true (thus all worker data are transfered back to master)
 	routeMessageEvents(process, self, true)
-	// process.send is Node's IPC equivalent of Browser's postMesage()
+	// process.send is Node's IPC equivalent of Browser's postMessage()
 	process.send = message => self.postMessage(message)
 
 	// TODO: test if this is necessary (node's cluster worker fires this automatically)

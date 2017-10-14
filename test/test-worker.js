@@ -2,12 +2,12 @@ var customImport = typeof self === 'object' ? importScripts : require
 customImport('../index.js')
 
 
-// Utility wrapper for promisified setTimeout
-var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
 
+// helper variables
 var isBrowser = typeof navigator === 'object'
 var isNode = typeof process === 'object' && process.versions && process.versions.node
 
+// Testing basic messaging/ipc and using it to test existence of available/defined properties and methods
 ;(() => {
 	if (isBrowser) {
 		self.addEventListener('message', e => onBasicTestingMessage(e.data))
@@ -18,25 +18,33 @@ var isNode = typeof process === 'object' && process.versions && process.versions
 		var reply = process.send.bind(process)
 	}
 	function onBasicTestingMessage(data) {
+		var {id} = data
 		if (data.typeof) {
-			reply({result: typeof walkPath(data.typeof)})
+			reply({id, result: typeof walkPath(data.typeof)})
 		}
 	}
 })()
 
+
+// Utility wrapper for promisified setTimeout
+var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
+
 // WebWorker way of passing raw messages
-self.addEventListener('message', e => {
-	if (e.data === 'hello-self')
+self.addEventListener('message', ({data}) => {
+	console.log('worker - ael ', data, data === 'hello-self')
+	if (data === 'hello-self')
 		self.postMessage('hello from self')
 })
 // Node IPC way of passing raw messages
 process.on('message', data => {
-	if (data === 'helo-process')
+	console.log('worker - proc', data, data === 'hello-process')
+	if (data === 'hello-process')
 		process.send('hello from process')
 })
 // Node like 
 
 process.on('custom-event', array => {
+	console.log('# custom-event', array)
 	array.pop()
 	array.push('master')
 	process.emit('custom-reply', array.join(' '))

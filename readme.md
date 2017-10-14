@@ -15,6 +15,8 @@ Works across many platforms and can be used in both the browsers with native  an
 
 Spawns child processes in Node.js and creates Worker threads in browsers.
 
+It started off as a promise returning request-response wrapper over `worker.postMessage()`/`self.addEventListener('message')` for calling worker functions from the main thread. Availability of the new `Proxy`standard then allowed a nicer way of calling those methods with automatically created disposable proxy objects. Need for load balancer lead to creation of Cluster class that distributes tasks among available threads. And finally a desire to reuse code and an elegance of Node's style of coding drove the implementation of Node equivalent of WebWorkers and bringing some of its traits (like EventEmitter styled eventing) back to the browser land.
+
 # Installation
 
 ```

@@ -130,26 +130,55 @@ describe('ProxyWorker', () => {
 
 		// fixture worker
 		var pw
-		before(async () => pw = new ProxyWorker('test-worker.js'))
+		var worker
+		before(async () => {
+			pw = new ProxyWorker('test-worker.js')
+			worker = pw.worker
+		})
 		after(async () => pw.terminate())
 
-		it(`raw self.postMessage() / self.addEventListener('message')`, done => {
-			pw.worker.postMessage('hello-self')
-			pw.worker.addEventListener('message', e => {
-				if (e.data === 'hello from self') done()
+		it(`worker.postMessage(...) should be available native or polyfilled`, () => {
+			assert.isFunction(worker.postMessage)
+		})
+
+		it(`worker.addEventListener('message', ...) should be available native or polyfilled`, () => {
+			assert.isFunction(worker.addEventListener)
+		})
+
+		it(`worker.send(...) should be available native or polyfilled`, () => {
+			assert.isFunction(worker.send)
+		})
+
+		it(`worker.on('message', ...) should be available native or polyfilled`, () => {
+			assert.isFunction(worker.on)
+		})
+
+		it(`pw.emit(...) should be available native or polyfilled`, () => {
+			assert.isFunction(pw.emit)
+		})
+
+		it(`pw.on(...) should be available native or polyfilled`, () => {
+			assert.isFunction(pw.on)
+		})
+
+		it(`raw .postMessage() / .addEventListener('message')`, done => {
+			worker.postMessage('hello-self')
+			worker.addEventListener('message', ({data}) => {
+				if (data === 'hello from self') done()
 			})
 		})
 
-		it(`raw process.send() / process.on('message')`, done => {
-			pw.worker.send('hello-process')
-			pw.worker.on('message', e => {
-				if (e.data === 'hello from process') done()
+		it(`raw .send() / .on('message')`, done => {
+			worker.send('hello-process')
+			worker.on('message', data => {
+				if (data === 'hello from process') done()
 			})
 		})
 
-		it(`EventEmitter process .emit() / .on()`, done => {
+		it(`EventEmitter styled .emit() / .on() with custom events`, done => {
 			pw.emit('custom-event', ['hello', 'worker'])
 			pw.on('custom-reply', data => {
+				console.log('pw on custom-reply')
 				if (data === 'hello master') done()
 			})
 		})
@@ -435,18 +464,49 @@ describe('process', () => {
 	})
 */
 
+	function createTypeOfQuery(path) {
+		var id = Math.random().toFixed(10).slice(2)
+		return {id, typeof: path}
+	}
+	function getTypeOfBrowser(worker, path) {
+		return new Promise(resolve => {
+			var query = createTypeOfQuery(path)
+			worker.postMessage(query)
+			worker.addEventListener('message', ({data}) => {
+				if (data.id === query.id)
+					resolve(data.result)
+			})
+		})
+	}
+	function getTypeOfNode(worker, path) {
+		return new Promise(resolve => {
+			var query = createTypeOfQuery(path)
+			worker.send(query)
+			worker.on('message', data => {
+				if (data.id === query.id)
+					resolve(data.result)
+			})
+		})
+	}
+
 	if (isBrowser) describe('browser Worker', () => {
 		var pw
 		before(async () => pw = new ProxyWorker(workerPath))
 		after(async () => pw.terminate())
 
-		it('process is shimmed', done => {
-			pw.worker.postMessage({typeof: 'process'})
-			pw.once('message', ({result}) => {
-				var type = result
-				assert.equal(result, 'object')
-				done()
-			})
+		it('native self should be available', async () => {
+			var type = await getTypeOfBrowser(pw.worker, 'process')
+			assert.equal(type, 'object')
+		})
+		it('native self.addEventListener() / self.postMessage() should be available', async () => {
+			var type1 = await getTypeOfBrowser(pw.worker, 'addEventListener')
+			assert.equal(type1, 'function')
+			var type2 = await getTypeOfBrowser(pw.worker, 'postMessage')
+			assert.equal(type2, 'function')
+		})
+		it('process should be shimmed', async () => {
+			var type = await getTypeOfBrowser(pw.worker, 'process')
+			assert.equal(type, 'object')
 		})
 
 		//it('process is shimmed', async () => {
@@ -464,13 +524,9 @@ describe('process', () => {
 		before(async () => pw = new ProxyWorker(workerPath))
 		after(async () => pw.terminate())
 
-		it('self is shimmed', done => {
-			pw.worker.send({typeof: 'self'})
-			pw.once('message', ({result}) => {
-				var type = {result}
-				assert.equal(result, 'object')
-				done()
-			})
+		it('self is shimmed', async () => {
+			var type = await getTypeOfNode(pw.worker, 'self')
+			assert.equal(type, 'object')
 		})
 
 		//it('self is shimmed', async () => {

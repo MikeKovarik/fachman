@@ -493,17 +493,17 @@ describe('process', () => {
 		after(async () => worker.terminate())
 
 		it('native self should be available', async () => {
-			var type = await getTypeOfBrowser(worker.worker, 'process')
+			var type = await getTypeOfBrowser(worker, 'process')
 			assert.equal(type, 'object')
 		})
 		it('native self.addEventListener() / self.postMessage() should be available', async () => {
-			var type1 = await getTypeOfBrowser(worker.worker, 'addEventListener')
+			var type1 = await getTypeOfBrowser(worker, 'addEventListener')
 			assert.equal(type1, 'function')
-			var type2 = await getTypeOfBrowser(worker.worker, 'postMessage')
+			var type2 = await getTypeOfBrowser(worker, 'postMessage')
 			assert.equal(type2, 'function')
 		})
 		it('process should be shimmed', async () => {
-			var type = await getTypeOfBrowser(worker.worker, 'process')
+			var type = await getTypeOfBrowser(worker, 'process')
 			assert.equal(type, 'object')
 		})
 
@@ -523,14 +523,12 @@ describe('process', () => {
 		after(async () => worker.terminate())
 
 		it('self is shimmed', async () => {
-			var type = await getTypeOfNode(worker.worker, 'self')
+			var type = await getTypeOfNode(worker, 'self')
 			assert.equal(type, 'object')
 		})
 
 		//it('self is shimmed', async () => {
-		//	console.log('before')
 		//	var type = await worker.proxy.getType('self')
-		//	console.log('after')
 		//	assert.equals(type, 'object')
 		//})
 /*
@@ -612,10 +610,8 @@ function arrayToString(array) {
 function toString(arg) {
 	if (!arg) return
 	var ctor = arg.constructor
-	//console.log(arg)
 	if (ctor === ArrayBuffer || ctor === SharedArrayBuffer)
 		arg = new Uint8Array(arg)
-	//console.log(arg)
 	if (Array.isArray(arg) || arg instanceof Uint8Array)
 		return arrayToString(arg)
 	else

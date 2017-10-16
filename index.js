@@ -106,6 +106,7 @@ if (!exports.EventEmitter) {
 
 }
 
+// Browser's Worker style alias for ChildProccess.on('message', ...)
 function addEventListener(name, listener) {
 	// Only allow routing 'message' event since that's what Node process' uses for passing IPC messages
 	// as well as browser's Worker/self. All other fachman's APIs are built on top of this elsewhere.
@@ -230,7 +231,6 @@ function routeToThread(eeProto, eeInstance) {
 	};
 	//eeProto.addEventListener('message', e => onMessage(e.data))
 	eeInstance.on('message', onMessage);
-
 }
 
 

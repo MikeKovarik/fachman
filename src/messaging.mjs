@@ -127,7 +127,6 @@ export function routeToThread(eeProto, eeInstance) {
 	}
 	//eeProto.addEventListener('message', e => onMessage(e.data))
 	eeInstance.on('message', onMessage)
-
 }
 
 

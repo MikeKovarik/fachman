@@ -1,12 +1,12 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('events'), require('net'), require('os'), require('child_process')) :
-	typeof define === 'function' && define.amd ? define(['exports', 'events', 'net', 'os', 'child_process'], factory) :
-	(factory((global.fachman = {}),global.events,global.net,global.os,global.child_process));
-}(this, (function (exports,events,net,os,child_process) { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('os'), require('events'), require('net'), require('child_process')) :
+	typeof define === 'function' && define.amd ? define(['exports', 'os', 'events', 'net', 'child_process'], factory) :
+	(factory((global.fachman = {}),global.os,global.events,global.net,global.child_process));
+}(this, (function (exports,os,events,net,child_process) { 'use strict';
 
+os = os && os.hasOwnProperty('default') ? os['default'] : os;
 events = events && events.hasOwnProperty('default') ? events['default'] : events;
 net = net && net.hasOwnProperty('default') ? net['default'] : net;
-os = os && os.hasOwnProperty('default') ? os['default'] : os;
 
 var childDetectArg = 'is-child-worker';
 
@@ -49,35 +49,220 @@ if (exports.isNode)
 else
 	exports.MAX_THREADS = navigator.hardwareConcurrency || 1;
 
-function removeFromArray(array, item) {
+function removeFromArray$1(array, item) {
 	var index = array.indexOf(item);
 	if (index !== -1)
 		array.splice(index, 1);
 }
 
-function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
+exports.EventEmitter = events && events.EventEmitter;
 
-	if (exports.isNode)
-		transferArgs = false;
+if (!exports.EventEmitter) {
+
+	// Custom tiny EventEmitter sim so that we don't have to rely on 3rd party package if its not present.
+	// Mainly in browser.
+	// Note: using unshift() (and looping backwards) instead of push() to prevent
+	//       issues with self-removing once() listeners
+	exports.EventEmitter = function EventEmitter() {
+		this._map = new Map;
+	};
+
+	exports.EventEmitter.prototype._getEventCallbacks = function(name) {
+		if (!this._map.has(name))
+			this._map.set(name, []);
+		return this._map.get(name)
+	};
+
+	exports.EventEmitter.prototype.emit = function(name, ...args) {
+		var callbacks = this._getEventCallbacks(name);
+		var i = callbacks.length;
+		while (i--) {
+			callbacks[i](...args);
+		}
+	};
+
+	exports.EventEmitter.prototype.on = function(name, cb) {
+		this._getEventCallbacks(name).unshift(cb);
+	};
+
+	exports.EventEmitter.prototype.once = function(name, cb) {
+		var oneTimeCb = (...args) => {
+			this.removeListener(name, oneTimeCb);
+			cb(...args);
+		};
+		this.on(name, oneTimeCb);
+	};
+
+	exports.EventEmitter.prototype.removeListener = function(name, cb) {
+		removeFromArray(this._getEventCallbacks(name), cb);
+	};
+
+	exports.EventEmitter.prototype.removeAllListeners = function(name) {
+		if (name)
+			this._map.delete(name);
+		else
+			this._map.clear();
+	};
+
+}
+
+function addEventListener(name, listener) {
+	// Only allow routing 'message' event since that's what Node process' uses for passing IPC messages
+	// as well as browser's Worker/self. All other fachman's APIs are built on top of this elsewhere.
+	if (name !== 'message' && name !== 'error') return
+	// EventSource.addEventListener() provides an event object with 'data' property as an argument to the listener,
+	// whereas EventEmitter.emit() provides the data itself as the argument.
+	// To shim addEventListener without breaking the 'e.data', we need to intercept and wrap each emitted data.
+	var wrappedListener = data => listener({data});
+	// Listen on messages EventEmitter emits, and route them to the EventSource (calling them into user's listener)
+	this.on('message', wrappedListener);
+	// Since we're not using user's listener, but a wrapped version of it, we need to store both of them
+	// for when/if removeEventListener is called to stop listening.
+	if (!this._listeners)
+		this._listeners = new Map;
+	this._listeners.set(listener, wrappedListener);
+}
+
+// Browser's Worker style alias for ChildProccess.removeListener('message', ...)
+function removeEventListener(name, listener) {
+	if (name !== 'message' && name !== 'error') return
+	wrappedListener = this._listeners.get(listener);
+	if (!wrappedListener) return
+	this._listeners.delete(listener);
+	this.removeListener('message', wrappedListener);
+}
+
+// Create shim of browser's EventSource methods and add them to EventEmitter
+function routeToEventSource(eEmitter, eSource) {
+	if (eSource) {
+		eEmitter.addEventListener = addEventListener.bind(eSource);
+		eEmitter.removeEventListener = removeEventListener.bind(eSource);
+	} else {
+		eEmitter.addEventListener = addEventListener;
+		eEmitter.removeEventListener = removeEventListener;
+	}
+}
+
+function routeToEventEmitter(eEmitter, eSource) {
+	// TODO
+	var unwrapper = e => eEmitter._emitLocally('message', e.data);
+	eSource.addEventListener('message', unwrapper);
+	if (!eEmitter._killbacks)
+		eEmitter._killbacks = [];
+	eEmitter._killbacks.push(() => eEmitter.removeEventListener('message', unwrapper));
+}
+
+
+
+
+// Browser's Worker style alias for ChildProccess.send()
+function postMessage(message) {
+	this.send(message);
+}
+
+// Node's ChildProcess style alias for ChildProccess.send()
+function send(message) {
+	this.postMessage(message);
+}
+
+function shimBrowserIpc(eEmitter, eSource) {
+	if (eSource) {
+		eEmitter.postMessage = postMessage.bind(eSource);
+	} else {
+		eEmitter.postMessage = postMessage;
+	}
+}
+
+function shimNodeIpc(eEmitter, eSource) {
+	if (eSource) {
+		eEmitter.send = send.bind(eSource);
+	} else {
+		eEmitter.send = send;
+	}
+}
+
+
+
+
+//var _emitLocally = EventEmitter.prototype.emit
+
+// Only hands the event over to EventSource as 'message' event
+// NOTE: Node does not support transferables
+var _emitCrossThread;
+if (exports.isBrowser) {
+	_emitCrossThread = function _emitCrossThread(name, ...args) {
+		var transferables = undefined;
+		if (this.autoTransferArgs)
+			transferables = getTransferablesDeepTraversal(args);
+		this.postMessage({event: name, args}, transferables);
+	};
+}
+if (exports.isNode) {
+	_emitCrossThread = function _emitCrossThread(name, ...args) {
+		this.send({event: name, args});
+	};
+}
+
+var internalProcessEvents = ['newListener', 'removeListener', 'message', 'internalMessage', 'unref', 'error', 'uncaughtException'];
+
+// Circulates the event within EventEmitter as usual and also routes it into EventSource.
+function emit(name, ...args) {
+	this._emitLocally(name, ...args);
+	// node process builtin events
+	if (internalProcessEvents.includes(name)) return
+	this._emitCrossThread(name, ...args);
+}
+
+function routeToThread(eeProto, eeInstance) {
+	// Vanilla EE.emit() is replaced by IPC so we need to keep the original emit()
+	// for when we're emiting messages locally and not the the other thread.
+	var _emitLocally = eeProto._emitLocally || exports.EventEmitter.prototype.emit;
+	eeProto._emitLocally = _emitLocally;
+	eeProto._emitCrossThread = _emitCrossThread;
+	eeProto.emit = emit;
+
+	// Received 'message' from other thread and if it's custom evet, emits it as such.
+	var onMessage = data => {
+		if (data.event)
+			eeInstance._emitLocally(data.event, ...data.args);
+		//else
+		//	eeInstance._emitLocally('message', data)
+	};
+	//eeProto.addEventListener('message', e => onMessage(e.data))
+	eeInstance.on('message', onMessage);
+
+}
+
+
+/*
+// Routes messages from EventSource as events into EventEmitter and vice versa.
+// EE mimics simplicity of Node style Emitters and uses underlying WebWorker API
+// of posting messages. Events are carried in custom object {event, args} with name
+// and arguments. This shields events from EventSource implementation. Mainly allows
+// safe usage any event name, including 'message' in emitter.emit('message', data).
+export function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
+
+	if (isNode)
+		transferArgs = false
 
 	// Only circulates the event inside EventEmitter and does not passes it to EventSource
-	eEmitter.emitLocally = eEmitter.emit.bind(eEmitter);
+	eEmitter.emitLocally = eEmitter.emit.bind(eEmitter)
 	// TODO: use addEventListener instead and carefuly handle memory leaks (remove listeners)
 	//       (mainly in master, when the worker closes)
 
 	// Only hands the event over to EventSource as 'message' event
 	eEmitter.emitToThread = (event, ...args) => {
-		var transferables = undefined;
+		var transferables = undefined
 		if (transferArgs)
-			transferables = getTransferablesDeepTraversal(args);
-		eSource.postMessage({event, args}, transferables);
-	};
+			transferables = getTransferablesDeepTraversal(args)
+		eSource.postMessage({event, args}, transferables)
+	}
 
 	// Circulates the event within EventEmitter as usual and also routes it into EventSource.
 	eEmitter.emit = (event, ...args) => {
-		eEmitter.emitLocally(event, ...args);
-		eEmitter.emitToThread(event, ...args);
-	};
+		eEmitter.emitLocally(event, ...args)
+		eEmitter.emitToThread(event, ...args)
+	}
 
 	// Handles receiving 'message' events from EventSource and routes them into EventEmitter
 	//eSource.addEventListener('message', onCrossThreadMessage)
@@ -85,16 +270,16 @@ function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
 		// Although we're only sending object with data property, we have to handle (and ignore) everything
 		// that potentially gets sent from outside of this module.
 		if (data.event)
-			eEmitter.emitLocally(data.event, ...data.args);
+			eEmitter.emitLocally(data.event, ...data.args)
 		else
-			eEmitter.emitLocally('message', data);
+			eEmitter.emitLocally('message', data)
 		// Hand the raw message over to onmessage property to align with Worker API
 		if (eEmitter.onmessage)
-			eEmitter.onmessage({data});
-	};
+			eEmitter.onmessage({data})
+	}
 
 }
-
+*/
 // Only ArrayBuffer, MessagePort and ImageBitmap types are transferable.
 // Very naive and probably even expensive way of finding all transferables.
 // TODO: Better heuristic of determining what's transferable
@@ -169,157 +354,90 @@ if (exports.isBrowser && typeof global === 'undefined')
 	self.global = self;
 
 
-;
-
-if (events) {
-
-	// Hooray. we have either native or 3rd party EventEmitter at our disposal.
-	exports.EventEmitter = events.EventEmitter;
-
-} else {
-
-	// Custom tiny EventEmitter sim so that we don't have to rely on 3rd party package if its not present.
-	// Mainly in browser.
-	// Note: using unshift() (and looping backwards) instead of push() to prevent
-	//       issues with self-removing once() listeners
-	exports.EventEmitter = function EventEmitter() {
-		this._map = new Map;
-	};
-
-	exports.EventEmitter.prototype._getEventCallbacks = function(name) {
-		if (!this._map.has(name))
-			this._map.set(name, []);
-		return this._map.get(name)
-	};
-
-	exports.EventEmitter.prototype.emit = function(name, ...args) {
-		var callbacks = this._getEventCallbacks(name);
-		var i = callbacks.length;
-		while (i--) {
-			callbacks[i](...args);
-		}
-	};
-
-	exports.EventEmitter.prototype.on = function(name, cb) {
-		this._getEventCallbacks(name).unshift(cb);
-	};
-
-	exports.EventEmitter.prototype.once = function(name, cb) {
-		var oneTimeCb = (...args) => {
-			this.removeListener(name, oneTimeCb);
-			cb(...args);
-		};
-		this.on(name, oneTimeCb);
-	};
-
-	exports.EventEmitter.prototype.removeListener = function(name, cb) {
-		removeFromArray(this._getEventCallbacks(name), cb);
-	};
-
-}
-
-
 if (exports.isBrowser && exports.isWorker) {
 	// Get or shim 'process' object used for ipc in child
 	if (self.process === undefined)
-		global.process = new exports.EventEmitter;
+		self.process = global.process = new exports.EventEmitter;
+		//global.process = new EventEmitter
 
-	// Hook into onmessage/postMessage() Worker messaging API and start serving messages through
-	// shim of Node's 'process' and its .on()/.send()
-	// TODO: Make autoTransferArgs configurable from within worker as well.
-	//       For now it's hardcoded true (thus all worker data are transfered back to master)
-	routeMessageEvents(process, self, true);
+	process.send = self.postMessage.bind(self);
+	process.postMessage = self.postMessage.bind(self);
 	// process.send is Node's IPC equivalent of Browser's postMessage()
-	process.send = message => self.postMessage(message);
+	shimNodeIpc(process, self);
+	// Route self.addEventListener('message') messages into EventEmitter.on('message')
+	routeToEventEmitter(process, self);
 
-	// TODO: test if this is necessary (node's cluster worker fires this automatically)
-	process.emit('online');
+	//process.send = message => self.postMessage(message)
+	//process.emit = ...
+	//process.on = ...
+	//process.removeListener = ...
 
 	// TODO: test if node can see termination of its child and only use this is browser.
 	let originalClose = self.close.bind(self);
-	// Create process.kill() and ovewrite close() in worker to notify parent about closing.
+	// Create process.kill() and ovewrite worker's close() to notify parent thread about closing.
 	process.kill = self.close = () => {
 		// Notify master about impending end of the thread
 		process.emit('exit', 0);
 		// Kill the thread
 		setTimeout(originalClose);
 	};
+	// Shim Node's require() with importScript()
+	//global.require = arg => importScripts(arg)
+
+	// TODO: test if this is necessary (node's cluster worker fires this automatically)
+	process.emit('online');
 }
+
 
 // Quick & dirty shim for messaging API used within Worker.
 if (exports.isNode && exports.isWorker) {
 	// polyfill 'self'
-	if (exports.isNode && typeof self === 'undefined')
+	if (global.self === undefined)
 		global.self = global;
-	// Polyfill *EventListener and postMessage methods on 'self', for IPC as available in native WebWorkers
-	self.addEventListener = process.on.bind(process);
-	self.removeEventListener = process.removeListener.bind(process);
-	self.postMessage = message => process.send(message);
-	// Close method to kill Worker thread
-	self.close = () => {
-		process.exit(0);
-	};
-	// 
-	self.importScripts = (...args) => {
-		args.forEach(require);
-	};
+
+	self.postMessage = process.send.bind(process);
+	// Shim browser's IPC self.postMessage
+	shimBrowserIpc(self, process);
+	// Route EventEmitter.on('message') events into self.addEventListener('message')
+	routeToEventSource(self, process);
+
+	//self.postMessage = message => process.send(message)
+	//self.addEventListener = addEventListener.bind(process)
+	//self.removeEventListener = removeEventListener.bind(process)
+
+	// Shim browser's close method to kill Worker thread
+	self.close = () => process.exit(0);
+	// Shim browser's importScript() with require()
+	self.importScripts = (...args) => args.forEach(require);
 }
 
 if (exports.isWorker) {
-
-	// Start listening from communication from master and handle tasks
-	process.on('task-start', executeTask);
-
-	async function executeTask(task) {
-		var {id, path, args} = task;
-		var theMethod = getMethod(path);
-		var status = false;
-		var payload;
-		if (!theMethod) {
-			let {name, message, stack} = new Error(`${path} is not a function (inside a worker)`);
-			payload = {name, message, stack};
-		} else try {
-			status = true;
-			payload = await theMethod(...args);
-		} catch(err) {
-			let {name, message, stack} = err;
-			name = name.replace(/theMethod/g, path);
-			message = message.replace(/theMethod/g, path);
-			payload = {name, message, stack};
-		}
-		process.emit('task-end', {id, status, payload});
-	}
-
-	function getMethod(path, scope = self) {
-		if (path.includes('.')) {
-			var sections = path.split('.');
-			var section;
-			while (section = sections.shift())
-				scope = scope[section];
-			return scope
-		} else {
-			return scope[path]
-		}
-	}
-
+	routeToThread(process, process);
 }
 
-var expo;
+var BrowserWorker;
 
-if (exports.isBrowser && !exports.isWorker) {
+if (exports.isMaster && exports.isBrowser) {
 
 	// Extension of native webworker's Worker class and EventEmitter class
 	// and few methods to loosely mimic Node's ChildProcess.
-	class MultiPlatformWorker extends self.Worker {
+	BrowserWorker = class BrowserWorker extends self.Worker {
 
-		constructor(workerPath) {
+		constructor(workerPath, options = {}) {
 			// Call constructor of Worker class to extends with its behavior
-			super(workerPath);
+			super(workerPath, options);
 			// Call constructor of EventEmitter class to extends with its behavior
 			exports.EventEmitter.call(this);
 
-			this._onMessage = e => this.emit('message', e.data);
-			this.addEventListener('message', this._onMessage);
+			// Array of callbacks to call, to remove listeners and prevent memory leaks, when the worker gets destroyed. 
+			this._killbacks = [];
+			// Route self.addEventListener('message') messages into EventEmitter.on('message')
+			routeToEventEmitter(this, this);
+		}
+
+		// Shim for Node's ChildProcess.kill()
+		kill() {
+			this.terminate();
 		}
 
 		// Kills worker thread and cancels all ongoing tasks
@@ -329,36 +447,29 @@ if (exports.isBrowser && !exports.isWorker) {
 			// Call native terminate() to kill the process
 			super.terminate();
 			// Emitting event 'exit' to make it similar to Node's childproc & cluster
-			this.emitLocally('exit', 0);
-			// Remove listeners to prevent memory leaks
-			this.removeEventListener('message', this._onMessage);
+			this._emitLocally('exit', 0);
 		}
 
-	}
+	};
 
-	let WorkerProto = MultiPlatformWorker.prototype;
+	let WorkerProto = BrowserWorker.prototype;
 	let EeProto = exports.EventEmitter.prototype;
 
-	// Node's ChildProcess style alias for Worker.postMessage()
-	WorkerProto.send = WorkerProto.postMessage;
-	// Node's ChildProcess style alias for Worker.terminate()
-	WorkerProto.kill = WorkerProto.terminate;
+	// Shim for Node's ChildProcess.send(), an alias for Worker.postMessage()
+	shimNodeIpc(WorkerProto);
 
 	// Extends MultiPlatformWoker's proto with EventEmitter methods manualy since its already
 	// inheriting from Worker class and classes can have only one direct parent.
-	let descriptors = Object.getOwnPropertyDescriptors(exports.EventEmitter.prototype); 
-	Object.keys(descriptors) 
-		.filter(name => name !== 'constructor') 
-		.forEach(key => WorkerProto[key] = EeProto[key]); 
+	let descriptors = Object.getOwnPropertyDescriptors(exports.EventEmitter.prototype);
+	Object.keys(descriptors)
+		.filter(name => name !== 'constructor')
+		.forEach(key => WorkerProto[key] = EeProto[key]);
 
-	expo = MultiPlatformWorker;
 }
 
-var BrowserWorker = expo;
+var NodeWorker;
 
-var expo$1;
-
-if (exports.isNode && !exports.isWorker) {
+if (exports.isMaster && exports.isNode) {
 
 	// Class that in its constructor does the same as child_process.spawn().
 	// It's made to be inherited from.
@@ -389,7 +500,7 @@ if (exports.isNode && !exports.isWorker) {
 	// This class extends from ChildProcess instead of creating it using child_process.spawn
 	// and monkey patching some methods afterwards.
 	// Note: ChildProcess inherits from EventEmitter, so we've got .on() and .emit() covered
-	class MultiPlatformWorker extends SpawnedChildProcess {
+	NodeWorker = class NodeWorker extends SpawnedChildProcess {
 
 		constructor(workerPath, options = {}) {
 			options.args = options.args || [];
@@ -420,57 +531,164 @@ if (exports.isNode && !exports.isWorker) {
 			*/
 
 			this.on('error', err => {
+				// Tigger Browser's Worker style API
 				if (this.onerror) this.onerror(err);
 			});
 
 			this.on('message', data => {
+				// Tigger Browser's Worker style API
 				if (this.onmessage) this.onmessage({data});
 			});
 
-			this._listeners = new Map;
+			// Array of callbacks to call, to remove listeners and prevent memory leaks, when the worker gets destroyed. 
+			this._killbacks = [];
 		}
-/*
+
 		// Browser's Worker style alias for ChildProccess.kill()
 		terminate() {
+			this.kill();
 			// TODO: investigate if this implementation is enough
-			this.kill('SIGINT')
-			this.kill('SIGTERM')
-			// Remove all active EE listeners to prevent memory leaks.
-			this.removeAllListeners()
-		}
-*/
-		// Browser's Worker style alias for ChildProccess.on('message', ...)
-		addEventListener(name, listener) {
-			if (name !== 'message') return
-			var callback = data => listener({data});
-			this.on('message', callback);
-			this._listeners.set(listener, callback);
+			//this.kill('SIGINT')
+			//this.kill('SIGTERM')
 		}
 
-		// Browser's Worker style alias for ChildProccess.removeListener('message', ...)
-		removeEventListener(name, listener) {
-			if (name !== 'message') return
-			callback = this._listeners.get(listener);
-			if (!callback) return
-			this._listeners.delete(listener);
-			this.removeListener('message', callback);
-		}
+	};
 
-	}
+	shimBrowserIpc(NodeWorker.prototype);
+	// Create shim of browser's EventSource methods and add them to EventEmitter
+	routeToEventSource(NodeWorker.prototype);
+	//NodeWorker.prototype.addEventListener = addEventListener
+	//NodeWorker.prototype.removeEventListener = removeEventListener
+	//NodeWorker.prototype.postMessage = postMessage
 
-	let workerProto = MultiPlatformWorker.prototype;
-
-	// Browser's Worker style alias for ChildProccess.send()
-	workerProto.postMessage = workerProto.send;
-	// Browser's Worker style alias for ChildProccess.kill()
-	workerProto.terminate = workerProto.kill;
-
-	expo$1 = MultiPlatformWorker;
 }
 
-var NodeWorker = expo$1
+;
 
-var MultiPlatformWorker = exports.isBrowser ? BrowserWorker : NodeWorker;
+if (exports.isMaster) {
+
+	var Parent = BrowserWorker || NodeWorker;
+
+	// Subclassing native Worker or ChildProcess extension
+	exports.MultiPlatformWorker = class MultiPlatformWorker extends Parent {
+
+		constructor(workerPath, options) {
+			super(workerPath, options);
+			// Node does not support transferables
+			if (exports.isNode)
+				this.autoTransferArgs = false;
+			routeToThread(this, this);
+		}
+
+		terminate() {
+			// Execute platform's standard closing procedure
+			super.terminate();
+			// Remove all active EE listeners to prevent memory leaks.
+			this.removeAllListeners();
+			// Remove listeners to prevent memory leaks
+			this._killbacks.forEach(callback => callback());
+		}
+
+/*
+		// Circulates the event within EventEmitter as usual and also routes it into EventSource.
+		emit(event, ...args) {
+			this._emitLocally(event, ...args)
+			this._emitCrossThread(event, ...args)
+		}
+
+		// Only hands the event over to EventSource as 'message' event
+		// NOTE: Node does not support transferables
+		_emitCrossThread(event, ...args) {
+			var transferables = undefined
+			if (this.autoTransferArgs)
+				transferables = getTransferablesDeepTraversal(args)
+			this.postMessage({event, args}, transferables)
+		}
+*/
+	};
+
+/*
+	// Only circulates the event inside EventEmitter and does not passes it to EventSource
+	MultiPlatformWorker.prototype._emitLocally = EventEmitter.prototype.emit
+
+
+	// Only ArrayBuffer, MessagePort and ImageBitmap types are transferable.
+	// Very naive and probably even expensive way of finding all transferables.
+	// TODO: Better heuristic of determining what's transferable
+	// TODO: More efficient traversal
+	// TODO: wrap or convert arguments into arraybuffer so that they can be transfered
+	// TODO: figure out a way to unwrap and revive converted data into their original structure
+	// TODO: Keep current structure behind option (something like autoTransferTraverse) and let the default be
+	//       - args of emitted events => message.args
+	//       - args of invoked functions => message.args.args
+	//       - payload of resolved functions => message.args.payload
+
+	// Expects any type of input argument. Traverses deeper if it's array of object.
+	// Returns undefined, transferable or an array of transferables
+	function getTransferablesDeepTraversal(arg) {
+		if (isTransferable(arg)) {
+			return arg
+		} else if (isModifiableForTransfer(arg)) {
+			return arg.buffer
+		} if (Array.isArray(arg)) {
+			if (arg.length === 0 || isPrimitiveArray(arg))
+				return
+			var array = arg.map(getTransferablesDeepTraversal).filter(a => a)
+			var flattened = flatten(array)
+			if (flattened.length)
+				return flattened
+		} else if (typeof arg === 'object' && arg !== null) {
+			return getTransferablesDeepTraversal(Object.keys(arg).map(key => arg[key]))
+		}
+	}
+
+	function flatten(array) {
+		let item
+		for (var i = 0; i < array.length; i++) {
+			item = array[i]
+			if (!Array.isArray(item)) continue
+			array.splice(i, 1, ...item)
+			i += item.length - 1
+		}
+		return array
+	}
+
+	function isPrimitiveArray(array) {
+		return typeof isPrimitive(array[0]) && isPrimitive([array.length -1])
+	}
+
+	function isPrimitive(arg) {
+		if (!arg)
+			return true
+		var ctor = arg.constructor
+		if (ctor === Boolean || ctor === Number || ctor === String)
+			return true
+		return false
+	}
+
+	function isTransferable(arg) {
+		return arg instanceof ArrayBuffer
+	}
+
+	function isModifiableForTransfer(arg) {
+		return arg instanceof Uint8Array
+			|| arg instanceof Uint16Array
+	}
+
+	function ensureTransferability(arg) {
+		if (arg instanceof Uint8Array)
+			return arg.buffer
+		if (arg instanceof ArrayBuffer)
+			return arg
+	}
+*/
+
+} else {
+
+	// Export noop to prevent breakage in worker environment, from where creating another worker doesn't make sense
+	exports.MultiPlatformWorker = class {};
+
+}
 
 var pathSymbol = Symbol('Proxy path');
 var onCallSymbol = Symbol('Proxy onCall');
@@ -518,7 +736,149 @@ var defaultOptions = {
 	autoTransferArgs: true,
 };
 
-// The main hub controlling all the child workers
+
+// Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)
+// to the actual worker code, executes it there and waits for the woker to respond with result.
+class ProxyWorker$1 extends exports.MultiPlatformWorker {
+
+	get runningTasks() {
+		return this._runningTasks || 0
+	}
+	set runningTasks(newValue) {
+		this._runningTasks = newValue;
+		// Emit current status locally to the EE and not to the thread.
+		if (newValue === 0)
+			this._emitLocally('idle');
+		else
+			this._emitLocally('running');
+	}
+
+	get running() {
+		return this.runningTasks > 0
+	}
+	get idle() {
+		return this.runningTasks === 0
+	}
+
+	constructor(workerPath, options = {}) {
+		// we will open user worker script which will load this library
+		if (options.useEsModules & exports.isBrowser)
+			options.type = 'module';
+		super(workerPath, options);
+		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
+		// Apply options to this instance
+		Object.assign(this, defaultOptions);
+		// TODO: Apply user's options
+		this._setupLifecycle();
+		this._setupTasks();
+		// Creation of the proxy itself, intercepting calls to the proxy object
+		// and passing them into the worker.
+		this.invokeTask = this.invokeTask.bind(this);
+		this.proxy = createNestedProxy({}, this.invokeTask);
+	}
+
+	_setupLifecycle() {
+		// The worker starts off as offline
+		this.online = false;
+		// Creating ready promise which resolves after first 'online' event, when worker is ready
+		this.ready = new Promise(resolve => {
+			// Warning: Don't try to wrap this into chaining promise. Worker loads synchronously
+			//          and synchronous EventEmitter callbacks would race each other over async Promise.
+			this.once('online', () => {
+				this.online = true;
+				resolve();
+			});
+		});
+		// Handle closing of the thread and 
+		this._onExit = this._onExit.bind(this);
+		this.on('exit', this._onExit);
+	}
+
+	_onExit(code) {
+		if (code === 0) {
+			// Task was closed gracefuly by either #terminate() or self.close() from within worker.
+			this._taskResolvers.forEach(({reject}) => reject());
+		} else {
+			// Thread was abruptly killed. We might want to restart it and/or restart unfinished tasks.
+			// Note: This should not be happening to browser Workers, but only to node child processes.
+		}
+		this.online = false;
+	}
+
+	_setupTasks() {
+		// List of resolvers and rejectors of unfinished promises (ongoing requests)
+		this._taskResolvers = new Map;
+		this._onTaskEnd = this._onTaskEnd.bind(this);
+		this.on('task-end', this._onTaskEnd);
+	}
+
+	// Proxy get() handler.
+	// Each called method and its arguments are turned into object describing the request
+	// and is sent over to the worker where appropriate handler tries to find and call (invoke) the method
+	// (by the name given by the proxy getter) with given arguments that the emulated method is called with.
+	// Returns function (emulated method) which can be called with arguments as if the real mehod was called.
+	// Promise is then returned and is resolved once given method in worker is found and finished
+	invokeTask(task) {
+		this.runningTasks++;
+		task = createTask(task);
+		var {id, path, args, promise, resolvers} = task;
+		// Emit info about the task, most importantly, into the thread.
+		this.emit('task-start', {id, path, args});
+		this._taskResolvers.set(id, resolvers);
+		return promise
+	}
+
+	// Handler of messages from inside of the worker.
+	// We are only handling responses to called (invoked) method from within.
+	// Resolver (or rejector) for given request ID is found and called with returned data (or error).
+	_onTaskEnd({id, status, payload}) {
+		if (!this._taskResolvers.has(id)) return
+		var {resolve, reject} = this._taskResolvers.get(id);
+		this._taskResolvers.delete(id);
+		this.runningTasks--;
+		if (status === true) {
+			// Execution ran ok and we a have a result.
+			resolve(payload);
+		} else if (status === false) {
+			// Error occured but it had to be sent deconstructed.
+			// Create empty Error shell and copy the actual error info into it.
+			var err = new Error();
+			err.name = payload.name;
+			err.message = payload.message;
+			err.stack = payload.stack;
+			reject(err);
+		}
+	}
+/*
+	// Kills worker thread and cancels all ongoing tasks
+	terminate() {
+		this.worker.terminate()
+		// Emitting event 'exit' to make it similar to Node's childproc & cluster
+		this._emitLocally('exit', 0)
+	}
+*/
+	// Cleanup after terminate()
+	destroy() {
+		// TODO: remove all event listeners on both EventSource (Worker) and EventEmitter (this)
+		// TODO: hook this on 'exit' event. Note: be careful with exit codes and autorestart
+		// TODO: make this call terminate() if this method is called directly
+		this.removeAllListeners();
+	}
+
+}
+
+
+// Accepts either empty object or preexisting task descruptor (object with 'name' and 'args')
+// and enhances it with id, promise and resolvers for the promise.
+function createTask(task = {}) {
+	if (task.promise) return task
+	task.promise = new Promise((resolve, reject) => {
+		task.resolvers = {resolve, reject};
+	});
+	task.id = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+	return task
+}
+
 class Cluster extends exports.EventEmitter {
 
 	get running() {
@@ -545,7 +905,7 @@ class Cluster extends exports.EventEmitter {
 			this.threads = exports.MAX_THREADS;
 		// binding methods to this instance
 		this.invokeTask = this.invokeTask.bind(this);
-		this.emitLocally = this.emit.bind(this); // TODO
+		this._emitLocally = this.emit.bind(this); // TODO
 		// Create workers and supporting structures.
 		this._createWorkers();
 		// Create proxy for easy manipulation with APIs within workers.
@@ -637,7 +997,7 @@ class Cluster extends exports.EventEmitter {
 			this.workers.push(wp);
 		this.idleWorkers.add(wp);
 		// Similarly to Node cluster, each online worker event is exposed to the whole cluster
-		this.emitLocally('online', wp);
+		this._emitLocally('online', wp);
 		// Announce the worker as idle and let it start taking tasks in queue
 		this._onWorkerIdle(wp);
 	}
@@ -655,7 +1015,7 @@ class Cluster extends exports.EventEmitter {
 			// Emit 'idle' if we're done with all tasks (no workers are running)
 			//if (this.runningWorkers.size === 0)
 			if (!wasIdle && this.idle)
-				this.emitLocally('idle');
+				this._emitLocally('idle');
 		}
 	}
 
@@ -663,7 +1023,7 @@ class Cluster extends exports.EventEmitter {
 		// Emit 'running' if we're started doing first task
 		// (no workers were previously running)
 		if (this.runningWorkers.size === 0)
-			this.emitLocally('running');
+			this._emitLocally('running');
 		this.idleWorkers.delete(wp);
 		this.runningWorkers.add(wp);
 	}
@@ -672,164 +1032,58 @@ class Cluster extends exports.EventEmitter {
 		// Worker died or was closed
 		this.idleWorkers.delete(wp);
 		this.runningWorkers.delete(wp);
-		removeFromArray(this.workers, wp);
+		removeFromArray$1(this.workers, wp);
 		// Similarly to Node cluster, each closed worker event is exposed to the whole cluster
-		this.emitLocally('exit', wp);
+		this._emitLocally('exit', wp);
 	}
 
 }
 
+if (exports.isWorker) {
 
+	// Start listening from communication from master and handle tasks
+	process.on('task-start', executeTask);
 
-// Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)
-// to the actual worker code, executes it there and waits for the woker to respond with result.
-class ProxyWorker extends exports.EventEmitter {
-
-	get runningTasks() {
-		return this._runningTasks || 0
-	}
-	set runningTasks(newValue) {
-		this._runningTasks = newValue;
-		// Emit current status locally to the EE and not to the thread.
-		if (newValue === 0)
-			this.emitLocally('idle');
-		else
-			this.emitLocally('running');
-	}
-
-	get running() {
-		return this.runningTasks > 0
-	}
-	get idle() {
-		return this.runningTasks === 0
-	}
-
-	constructor(workerPath, options = {}) {
-		super();
-		// Apply options to this instance
-		Object.assign(this, defaultOptions);
-		if (workerPath)
-			this.workerPath = workerPath;
-		// TODO: Apply user's options
-		// Bind methods to each instance
-		this.invokeTask = this.invokeTask.bind(this);
-		this._onTaskEnd = this._onTaskEnd.bind(this);
-		this._onExit = this._onExit.bind(this);
-		// The worker starts off as offline
-		this.online = false;
-		// Creating ready promise which resolves after first 'online' event, when worker is ready
-		this.ready = new Promise(resolve => {
-			// Warning: Don't try to wrap this into chaining promise. Worker loads synchronously
-			//          and synchronous EventEmitter callbacks would race each other over async Promise.
-			this.once('online', () => {
-				this.online = true;
-				resolve();
-			});
-		});
-		// List of resolvers and rejectors of unfinished promises (ongoing requests)
-		this._taskResolvers = new Map;
-		// we will open user worker script which will load this library
-		this.worker = new MultiPlatformWorker(this.workerPath, exports.isNode ? options : undefined);
-		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
-		// Show errors from worker. Disabled by default because browser does it and noe processes share std.
-		if (options.routeErrors) {
-			// TODO: handle errors
-			// Start handling messages comming from worker
-			this.worker.onerror = e => console.error('WORKER:', e);
+	async function executeTask(task) {
+		var {id, path, args} = task;
+		var theMethod = getMethod(path);
+		var status = false;
+		var payload;
+		if (!theMethod) {
+			let {name, message, stack} = new Error(`${path} is not a function (inside a worker)`);
+			payload = {name, message, stack};
+		} else try {
+			status = true;
+			payload = await theMethod(...args);
+		} catch(err) {
+			let {name, message, stack} = err;
+			name = name.replace(/theMethod/g, path);
+			message = message.replace(/theMethod/g, path);
+			payload = {name, message, stack};
 		}
-		// Process (resolve and/or expose) the the data
-		routeMessageEvents(this, this.worker, this.autoTransferArgs);
-		this.on('task-end', this._onTaskEnd);
-		// Handle closing of the thread and 
-		this.on('exit', this._onExit);
-		// Creation of the proxy itself, intercepting calls to the proxy object
-		// and passing them into the worker.
-		this.proxy = createNestedProxy({}, this.invokeTask);
+		process.emit('task-end', {id, status, payload});
 	}
 
-	// Handler of messages from inside of the worker.
-	// We are only handling responses to called (invoked) method from within.
-	// Resolver (or rejector) for given request ID is found and called with returned data (or error).
-	_onTaskEnd({id, status, payload}) {
-		if (!this._taskResolvers.has(id)) return
-		var {resolve, reject} = this._taskResolvers.get(id);
-		this._taskResolvers.delete(id);
-		this.runningTasks--;
-		if (status === true) {
-			// Execution ran ok and we a have a result.
-			resolve(payload);
-		} else if (status === false) {
-			// Error occured but it had to be sent deconstructed.
-			// Create empty Error shell and copy the actual error info into it.
-			var err = new Error();
-			err.name = payload.name;
-			err.message = payload.message;
-			err.stack = payload.stack;
-			reject(err);
-		}
-	}
-
-	// Proxy get() handler.
-	// Each called method and its arguments are turned into object describing the request
-	// and is sent over to the worker where appropriate handler tries to find and call (invoke) the method
-	// (by the name given by the proxy getter) with given arguments that the emulated method is called with.
-	// Returns function (emulated method) which can be called with arguments as if the real mehod was called.
-	// Promise is then returned and is resolved once given method in worker is found and finished
-	invokeTask(task) {
-		this.runningTasks++;
-		task = createTask(task);
-		var {id, path, args, promise, resolvers} = task;
-		// Emit info about the task, most importantly, into the thread.
-		this.emit('task-start', {id, path, args});
-		this._taskResolvers.set(id, resolvers);
-		return promise
-	}
-/*
-	// Kills worker thread and cancels all ongoing tasks
-	terminate() {
-		this.worker.terminate()
-		// Emitting event 'exit' to make it similar to Node's childproc & cluster
-		this.emitLocally('exit', 0)
-	}
-*/
-	_onExit(code) {
-		if (code === 0) {
-			// Task was closed gracefuly by either #terminate() or self.close() from within worker.
-			this._taskResolvers.forEach(({reject}) => reject());
+	function getMethod(path, scope = self) {
+		if (path.includes('.')) {
+			var sections = path.split('.');
+			var section;
+			while (section = sections.shift())
+				scope = scope[section];
+			return scope
 		} else {
-			// Thread was abruptly killed. We might want to restart it and/or restart unfinished tasks.
-			// Note: This should not be happening to browser Workers, but only to node child processes.
+			return scope[path]
 		}
-		this.online = false;
 	}
 
-	// Cleanup after terminate()
-	destroy() {
-		// TODO: remove all event listeners on both EventSource (Worker) and EventEmitter (this)
-		// TODO: hook this on 'exit' event. Note: be careful with exit codes and autorestart
-		// TODO: make this call terminate() if this method is called directly
-		this.removeAllListeners();
-	}
-
-}
-
-
-// Accepts either empty object or preexisting task descruptor (object with 'name' and 'args')
-// and enhances it with id, promise and resolvers for the promise.
-function createTask(task = {}) {
-	if (task.promise) return task
-	task.promise = new Promise((resolve, reject) => {
-		task.resolvers = {resolve, reject};
-	});
-	task.id = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-	return task
 }
 
 // TODO: handle SIGTERM and SIGINT in Node
 
+exports.defaultOptions = defaultOptions;
+exports.ProxyWorker = ProxyWorker$1;
+exports.createTask = createTask;
 exports.Cluster = Cluster;
-exports.ProxyWorker = ProxyWorker;
-exports.MultiPlatformWorker = MultiPlatformWorker;
 
 Object.defineProperty(exports, '__esModule', { value: true });
 

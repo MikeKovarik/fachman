@@ -1,5 +1,4 @@
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
-import {EventEmitter} from './shims.mjs'
 
 
 if (isWorker) {

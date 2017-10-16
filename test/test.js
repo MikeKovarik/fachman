@@ -9,7 +9,7 @@ if (isBrowser) {
 
 var assert = chai.assert
 
-var {Cluster, ProxyWorker, EventEmitter, Worker, isNode, isBrowser} = fachman
+var {Cluster, ProxyWorker, MultiPlatformWorker, EventEmitter, isNode, isBrowser} = fachman
 
 // Utility wrapper for promisified setTimeout
 var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve), millis)
@@ -17,16 +17,16 @@ var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve), millis
 
 
 describe('library', () => {
-	it('should export Cluster',           () => assert.exists(Cluster))
-	it('should export ProxyWorker',       () => assert.exists(ProxyWorker))
-	it('should export EventEmitter shim', () => assert.exists(EventEmitter))
-	it('should export Worker shim',       () => assert.exists(Worker))
+	it('should export Cluster',             () => assert.exists(Cluster))
+	it('should export ProxyWorker',         () => assert.exists(ProxyWorker))
+	it('should export EventEmitter shim',   () => assert.exists(EventEmitter))
+	it('should export MultiPlatformWorker', () => assert.exists(MultiPlatformWorker))
 })
 
-function isClosed(pw) {
-	assert.isFalse(pw.running)
-	//assert.isFalse(pw.idle)
-	assert.isFalse(pw.online)
+function isClosed(worker) {
+	assert.isFalse(worker.running)
+	//assert.isFalse(worker.idle)
+	assert.isFalse(worker.online)
 }
 
 describe('ProxyWorker', () => {
@@ -34,94 +34,95 @@ describe('ProxyWorker', () => {
 	describe('lifecycle', () => {
 
 		it('should create worker thread', () => {
-			var pw = new ProxyWorker('test-worker.js')
-			assert.exists(pw.worker)
-			pw.terminate()
+			var worker = new ProxyWorker('test-worker.js')
+			assert.exists(worker.postMessage)
+			assert.exists(worker.addEventListener)
+			worker.terminate()
 		})
 
 		it('.terminate() should kill worker thread', async () => {
-			var pw = new ProxyWorker('test-worker.js')
+			var worker = new ProxyWorker('test-worker.js')
 			await timeout(100)
-			pw.terminate()
+			worker.terminate()
 			await timeout(20)
-			isClosed(pw)
+			isClosed(worker)
 			// TODO
 		})
 
 		it('.kill() should kill worker thread', async () => {
-			var pw = new ProxyWorker('test-worker.js')
+			var worker = new ProxyWorker('test-worker.js')
 			await timeout(100)
-			pw.kill()
-			isClosed(pw)
+			worker.kill()
+			isClosed(worker)
 			// TODO
 		})
 
 		it(`.online property starts as 'false', turns 'true' when worker is ready, and 'false' when it's terminated`, done => {
-			var pw = new ProxyWorker('test-worker.js')
-			assert.isFalse(pw.online, '.online should be false at the beggining')
-			pw.once('online', () => {
-				assert.isTrue(pw.online, `.online should be true before after 'online' event is fired from worker`)
-				pw.kill()
+			var worker = new ProxyWorker('test-worker.js')
+			assert.isFalse(worker.online, '.online should be false at the beggining')
+			worker.once('online', () => {
+				assert.isTrue(worker.online, `.online should be true before after 'online' event is fired from worker`)
+				worker.kill()
 			})
-			pw.once('exit', () => {
-				assert.isFalse(pw.online, '.online should be false after closing the thread')
+			worker.once('exit', () => {
+				assert.isFalse(worker.online, '.online should be false after closing the thread')
 				done()
 			})
 		})
 
 		it(`created thread should fire 'online' event`, done => {
-			var pw = new ProxyWorker('test-worker.js')
-			pw.on('online', () => {
-				pw.terminate()
+			var worker = new ProxyWorker('test-worker.js')
+			worker.on('online', () => {
+				worker.terminate()
 				done()
 			})
 		})
 
 		it(`closing thread should fire 'exit' event`, done => {
-			var pw = new ProxyWorker('test-worker.js')
-			pw.on('exit', done)
-			setTimeout(() => pw.terminate(), 100)
+			var worker = new ProxyWorker('test-worker.js')
+			worker.on('exit', done)
+			setTimeout(() => worker.terminate(), 100)
 		})
 
 		it(`closing thread gracefuly should fire 'exit' event with code 0`, done => {
-			var pw = new ProxyWorker('test-worker.js')
-			pw.on('exit', code => {
+			var worker = new ProxyWorker('test-worker.js')
+			worker.on('exit', code => {
 				assert.equal(code, 0)
 				done()
 			})
-			setTimeout(() => pw.terminate(), 100)
+			setTimeout(() => worker.terminate(), 100)
 		})
 
 
 		it(`.ready promise exists`, async () => {
 			// TODO
-			var pw = new ProxyWorker('test-worker.js')
-			assert.exists(pw.ready)
-			assert.equal(pw.ready.constructor, Promise)
+			var worker = new ProxyWorker('test-worker.js')
+			assert.exists(worker.ready)
+			assert.equal(worker.ready.constructor, Promise)
 		})
 
 /*
 		if (isNode) {
 			// TODO: figure out a way to forcibly kill thread so that it returns 1
 			it(`closing/killing thread should fire 'exit' event with code 1`, done => {
-				var pw = new ProxyWorker('test-worker.js')
+				var worker = new ProxyWorker('test-worker.js')
 				await timeout(100)
-				pw.on('exit', code => {
+				worker.on('exit', code => {
 					assert.equal(code, 0)
 					done()
 				})
-				pw.kill()
+				worker.kill()
 			})
 		}
 */
 
 		it('closing thread should clean up listeners and cancel tasks', done => {
-			var pw = new ProxyWorker('test-worker.js')
-			pw.on('exit', () => {
-				assert.isEmpty(pw._taskResolvers)
+			var worker = new ProxyWorker('test-worker.js')
+			worker.on('exit', () => {
+				assert.isEmpty(worker._taskResolvers)
 				done()
 			})
-			setTimeout(() => pw.terminate(), 100)
+			setTimeout(() => worker.terminate(), 100)
 		})
 
 	})
@@ -129,13 +130,11 @@ describe('ProxyWorker', () => {
 	describe('master-worker communication', () => {
 
 		// fixture worker
-		var pw
 		var worker
 		before(async () => {
-			pw = new ProxyWorker('test-worker.js')
-			worker = pw.worker
+			worker = new ProxyWorker('test-worker.js')
 		})
-		after(async () => pw.terminate())
+		after(async () => worker.terminate())
 
 		it(`worker.postMessage(...) should be available native or polyfilled`, () => {
 			assert.isFunction(worker.postMessage)
@@ -153,22 +152,22 @@ describe('ProxyWorker', () => {
 			assert.isFunction(worker.on)
 		})
 
-		it(`pw.emit(...) should be available native or polyfilled`, () => {
-			assert.isFunction(pw.emit)
+		it(`worker.emit(...) should be available native or polyfilled`, () => {
+			assert.isFunction(worker.emit)
 		})
 
-		it(`pw.on(...) should be available native or polyfilled`, () => {
-			assert.isFunction(pw.on)
+		it(`worker.on(...) should be available native or polyfilled`, () => {
+			assert.isFunction(worker.on)
 		})
 
-		it(`raw .postMessage() / .addEventListener('message')`, done => {
+		it(`should send raw .postMessage() and receive .addEventListener('message') response`, done => {
 			worker.postMessage('hello-self')
 			worker.addEventListener('message', ({data}) => {
 				if (data === 'hello from self') done()
 			})
 		})
 
-		it(`raw .send() / .on('message')`, done => {
+		it(`should send raw .send() and receive .on('message') response`, done => {
 			worker.send('hello-process')
 			worker.on('message', data => {
 				if (data === 'hello from process') done()
@@ -176,9 +175,8 @@ describe('ProxyWorker', () => {
 		})
 
 		it(`EventEmitter styled .emit() / .on() with custom events`, done => {
-			pw.emit('custom-event', ['hello', 'worker'])
-			pw.on('custom-reply', data => {
-				console.log('pw on custom-reply')
+			worker.emit('custom-event', ['hello', 'worker'])
+			worker.on('custom-reply', data => {
 				if (data === 'hello master') done()
 			})
 		})
@@ -189,17 +187,17 @@ describe('ProxyWorker', () => {
 	describe('task invocation', () => {
 
 		// fixture worker
-		var pw, proxy
+		var worker, proxy
 		before(async () => {
-			pw = new ProxyWorker('test-worker.js')
-			proxy = pw.proxy
+			worker = new ProxyWorker('test-worker.js')
+			proxy = worker.proxy
 		})
-		after(async () => pw.terminate())
+		after(async () => worker.terminate())
 
 		it(`invokeTask()`, async () => {
 			var startTime = Date.now()
 			var input = 'this will get returned in 100ms'
-			var output = await pw.invokeTask({
+			var output = await worker.invokeTask({
 				path: 'asyncEcho',
 				args: [input, 100]
 			})
@@ -236,14 +234,14 @@ describe('ProxyWorker', () => {
 		})
 
 		it(`tasks should be removed from _taskResolvers after finishing`, async () => {
-			assert.isEmpty(pw._taskResolvers)
+			assert.isEmpty(worker._taskResolvers)
 			var promise1 = proxy.asyncHello()
-			assert.equal(pw._taskResolvers.size, 1)
+			assert.equal(worker._taskResolvers.size, 1)
 			var promise2 = proxy.syncHello()
 			var promise3 = proxy.echo('foo')
-			assert.equal(pw._taskResolvers.size, 3)
+			assert.equal(worker._taskResolvers.size, 3)
 			await Promise.all([promise1, promise2, promise3])
-			assert.isEmpty(pw._taskResolvers)
+			assert.isEmpty(worker._taskResolvers)
 		})
 
 	})
@@ -256,12 +254,12 @@ describe('ProxyWorker', () => {
 		if (isNode) return
 
 		// fixture worker
-		var pw, proxy
+		var worker, proxy
 		beforeEach(async () => {
-			pw = new ProxyWorker('test-worker.js')
-			proxy = pw.proxy
+			worker = new ProxyWorker('test-worker.js')
+			proxy = worker.proxy
 		})
-		afterEach(async () => pw.terminate())
+		afterEach(async () => worker.terminate())
 
 		// fixture data
 		var string = 'hello world'
@@ -391,39 +389,39 @@ describe('Cluster', () => {
 	it(`worker should be removed from .workers if it's closed`, done => {
 		var cluster = new Cluster('test-worker.js', 1)
 		cluster.ready.then(() => {
-			var pw = cluster.workers[0]
-			pw.once('exit', () => {
+			var worker = cluster.workers[0]
+			worker.once('exit', () => {
 				// note: using equals and not isEmpty because chai would cause problems with proxy
 				assert.equal(cluster.workers.length, 0)
 				done()
 			})
-			pw.kill()
+			worker.kill()
 		})
 	})
 
 	it(`worker should be removed from .idleWorkers if it's closed`, done => {
 		var cluster = new Cluster('test-worker.js', 1)
 		cluster.ready.then(() => {
-			var pw = cluster.workers[0]
-			pw.once('exit', () => {
+			var worker = cluster.workers[0]
+			worker.once('exit', () => {
 				// note: using equals and not isEmpty because chai would cause problems with proxy
 				assert.equal(cluster.idleWorkers.size, 0)
 				done()
 			})
-			pw.kill()
+			worker.kill()
 		})
 	})
 
 	it(`worker should be removed from .runningWorkers if it's closed`, done => {
 		var cluster = new Cluster('test-worker.js', 1)
 		cluster.ready.then(() => {
-			var pw = cluster.workers[0]
-			pw.once('exit', () => {
+			var worker = cluster.workers[0]
+			worker.once('exit', () => {
 				// note: using equals and not isEmpty because chai would cause problems with proxy
 				assert.equal(cluster.runningWorkers.size, 0)
 				done()
 			})
-			pw.kill()
+			worker.kill()
 		})
 	})
 
@@ -450,11 +448,11 @@ describe('Cluster', () => {
 describe('process', () => {
 
 	var workerPath = 'test-worker.js'
-	var pw
+	var worker
 /*
 	before(done => {
-		pw = new ProxyWorker(workerPath)
-		pw.process.once('exit', code => {
+		worker = new ProxyWorker(workerPath)
+		worker.process.once('exit', code => {
 			exitCode = code
 			done()
 		})
@@ -490,27 +488,27 @@ describe('process', () => {
 	}
 
 	if (isBrowser) describe('browser Worker', () => {
-		var pw
-		before(async () => pw = new ProxyWorker(workerPath))
-		after(async () => pw.terminate())
+		var worker
+		before(async () => worker = new ProxyWorker(workerPath))
+		after(async () => worker.terminate())
 
 		it('native self should be available', async () => {
-			var type = await getTypeOfBrowser(pw.worker, 'process')
+			var type = await getTypeOfBrowser(worker.worker, 'process')
 			assert.equal(type, 'object')
 		})
 		it('native self.addEventListener() / self.postMessage() should be available', async () => {
-			var type1 = await getTypeOfBrowser(pw.worker, 'addEventListener')
+			var type1 = await getTypeOfBrowser(worker.worker, 'addEventListener')
 			assert.equal(type1, 'function')
-			var type2 = await getTypeOfBrowser(pw.worker, 'postMessage')
+			var type2 = await getTypeOfBrowser(worker.worker, 'postMessage')
 			assert.equal(type2, 'function')
 		})
 		it('process should be shimmed', async () => {
-			var type = await getTypeOfBrowser(pw.worker, 'process')
+			var type = await getTypeOfBrowser(worker.worker, 'process')
 			assert.equal(type, 'object')
 		})
 
 		//it('process is shimmed', async () => {
-		//	var type = await pw.proxy.getType('process')
+		//	var type = await worker.proxy.getType('process')
 		//	assert.equals(type, 'object')
 		//})
 
@@ -520,18 +518,18 @@ describe('process', () => {
 	})
 
 	if (isNode) describe('node ChildProcess', () => {
-		var pw
-		before(async () => pw = new ProxyWorker(workerPath))
-		after(async () => pw.terminate())
+		var worker
+		before(async () => worker = new ProxyWorker(workerPath))
+		after(async () => worker.terminate())
 
 		it('self is shimmed', async () => {
-			var type = await getTypeOfNode(pw.worker, 'self')
+			var type = await getTypeOfNode(worker.worker, 'self')
 			assert.equal(type, 'object')
 		})
 
 		//it('self is shimmed', async () => {
 		//	console.log('before')
-		//	var type = await pw.proxy.getType('self')
+		//	var type = await worker.proxy.getType('self')
 		//	console.log('after')
 		//	assert.equals(type, 'object')
 		//})
@@ -550,19 +548,19 @@ describe('process', () => {
 	})
 
 	it('self.close() should gracefuly close the worker from within', async () => {
-		var pw = new ProxyWorker(workerPath)
+		var worker = new ProxyWorker(workerPath)
 		// Emit that tells worker to trigge self.close() in 300ms
-		pw.emit('kys-close')
+		worker.emit('kys-close')
 		await timeout(400)
-		isClosed(pw)
+		isClosed(worker)
 	})
 
 	it('process.kill() should gracefuly close the worker from within', async () => {
-		var pw = new ProxyWorker(workerPath)
+		var worker = new ProxyWorker(workerPath)
 		// Emit that tells worker to trigge process.kill() in 300ms
-		pw.emit('kys-process-kill')
+		worker.emit('kys-process-kill')
 		await timeout(400)
-		isClosed(pw)
+		isClosed(worker)
 	})
 
 	// TODO

@@ -31,20 +31,19 @@ var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis)
 
 // WebWorker way of passing raw messages
 self.addEventListener('message', ({data}) => {
-	console.log('worker - ael ', data, data === 'hello-self')
+	//console.log('worker - ael ', data, data === 'hello-self')
 	if (data === 'hello-self')
 		self.postMessage('hello from self')
 })
 // Node IPC way of passing raw messages
 process.on('message', data => {
-	console.log('worker - proc', data, data === 'hello-process')
+	//console.log('worker - proc', data, data === 'hello-process')
 	if (data === 'hello-process')
 		process.send('hello from process')
 })
 // Node like 
 
 process.on('custom-event', array => {
-	console.log('# custom-event', array)
 	array.pop()
 	array.push('master')
 	process.emit('custom-reply', array.join(' '))
@@ -72,7 +71,6 @@ function walkPath(path, scope = self) {
 	}
 }
 function getTypeOf(path) {
-	console.log('getTypeOf', path)
 	return typeof walkPath(path)
 }
 
@@ -119,11 +117,9 @@ function modifyView(original) {
 }
 
 function modifyArray(array) {
-	console.log('modifyArray', array)
 	return array
 }
 
 function modifyString(string) {
-	console.log('modifyAtring', string)
 	return string
 }

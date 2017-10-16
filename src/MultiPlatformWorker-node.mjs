@@ -1,11 +1,12 @@
-import {isMaster, isWorker, isNode, isBrowser, childDetectArg} from './platform.mjs'
-import {EventEmitter} from './shims.mjs'
+import {isMaster, isNode, childDetectArg} from './platform.mjs'
+import {EventEmitter} from './EventEmitter.mjs'
 import {ChildProcess} from 'child_process'
+import {shimBrowserIpc, routeToEventSource} from './messaging.mjs'
 
 
-var expo
+export var NodeWorker
 
-if (isNode && !isWorker) {
+if (isMaster && isNode) {
 
 	// Class that in its constructor does the same as child_process.spawn().
 	// It's made to be inherited from.
@@ -36,7 +37,7 @@ if (isNode && !isWorker) {
 	// This class extends from ChildProcess instead of creating it using child_process.spawn
 	// and monkey patching some methods afterwards.
 	// Note: ChildProcess inherits from EventEmitter, so we've got .on() and .emit() covered
-	class MultiPlatformWorker extends SpawnedChildProcess {
+	NodeWorker = class NodeWorker extends SpawnedChildProcess {
 
 		constructor(workerPath, options = {}) {
 			options.args = options.args || []
@@ -67,52 +68,34 @@ if (isNode && !isWorker) {
 			*/
 
 			this.on('error', err => {
+				// Tigger Browser's Worker style API
 				if (this.onerror) this.onerror(err)
 			})
 
 			this.on('message', data => {
+				// Tigger Browser's Worker style API
 				if (this.onmessage) this.onmessage({data})
 			})
 
-			this._listeners = new Map
-		}
-/*
-		// Browser's Worker style alias for ChildProccess.kill()
-		terminate() {
-			// TODO: investigate if this implementation is enough
-			this.kill('SIGINT')
-			this.kill('SIGTERM')
-			// Remove all active EE listeners to prevent memory leaks.
-			this.removeAllListeners()
-		}
-*/
-		// Browser's Worker style alias for ChildProccess.on('message', ...)
-		addEventListener(name, listener) {
-			if (name !== 'message') return
-			var callback = data => listener({data})
-			this.on('message', callback)
-			this._listeners.set(listener, callback)
+			// Array of callbacks to call, to remove listeners and prevent memory leaks, when the worker gets destroyed. 
+			this._killbacks = []
 		}
 
-		// Browser's Worker style alias for ChildProccess.removeListener('message', ...)
-		removeEventListener(name, listener) {
-			if (name !== 'message') return
-			callback = this._listeners.get(listener)
-			if (!callback) return
-			this._listeners.delete(listener)
-			this.removeListener('message', callback)
+		// Browser's Worker style alias for ChildProccess.kill()
+		terminate() {
+			this.kill()
+			// TODO: investigate if this implementation is enough
+			//this.kill('SIGINT')
+			//this.kill('SIGTERM')
 		}
 
 	}
 
-	let workerProto = MultiPlatformWorker.prototype
+	shimBrowserIpc(NodeWorker.prototype)
+	// Create shim of browser's EventSource methods and add them to EventEmitter
+	routeToEventSource(NodeWorker.prototype)
+	//NodeWorker.prototype.addEventListener = addEventListener
+	//NodeWorker.prototype.removeEventListener = removeEventListener
+	//NodeWorker.prototype.postMessage = postMessage
 
-	// Browser's Worker style alias for ChildProccess.send()
-	workerProto.postMessage = workerProto.send
-	// Browser's Worker style alias for ChildProccess.kill()
-	workerProto.terminate = workerProto.kill
-
-	expo = MultiPlatformWorker
 }
-
-export default expo

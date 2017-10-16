@@ -7,19 +7,25 @@
     "dev": "rollup -c -w"
   },
   "bugs": {
-    "url" : "https://github.com/MikeKovarik/fachman/issues"
+    "url": "https://github.com/MikeKovarik/fachman/issues"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/MikeKovarik/fachman.git"
   },
   "homepage": "https://mutiny.cz/fachman",
-  "keywords": ["worker", "webworkers", "threads", "multithreading", "multiplatform"],
+  "keywords": [
+    "worker",
+    "webworkers",
+    "threads",
+    "multithreading",
+    "multiplatform"
+  ],
   "author": "Mike Kovařík",
   "license": "MIT",
   "devDependencies": {
     "chai": "^4.1.2",
-    "mocha": "^4.0.0",
+    "mocha": "^4.0.1",
     "rollup": "^0.50.0"
   }
 }

@@ -1,4 +1,3 @@
-import events from 'events'
 import os from 'os'
 import {isNode} from './platform.mjs'
 

@@ -1,4 +1,6 @@
-import {isMaster, isNode, childDetectArg} from './platform.mjs'
+import path from 'path'
+import {isMaster, isNode, childDetectArg, supportsNativeModules} from './platform.mjs'
+import {fachmanPath} from './platform.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 import {ChildProcess} from 'child_process'
 import {shimBrowserIpc, routeToEventSource} from './messaging.mjs'
@@ -18,13 +20,29 @@ if (isMaster && isNode) {
 		// new SpawnedChildProcess(process.execPath, ['thefile.js', my', 'arg'], {stdio: [1,2,3,'ipc']})
 		// is same as:
 		// child_process.spawn(process.execPath, ['thefile.js', my', 'arg'], {stdio: [1,2,3,'ipc']})
-		constructor(file, args = [], options = {}) {
+		constructor(nodePath, args = [], options = {}) {
+			// ChildProcess constructor doesn't take any arugments. But later on it's initialized with .spawn() method.
 			super()
+			/*if (options.autoContext !== false) {
+				var userScriptRelPath = args.shift()
+				if (options.type === 'module' && supportsNativeModules) {
+					// import mjs wrapper
+					var wrapperName = 'wrapper.mjs'
+				} else {
+					// import js wrapper
+					var wrapperName = 'wrapper.js'
+				}
+				var fachmanDirPath = __dirname
+				var wrapperPath = path.join(fachmanDirPath, wrapperName)
+				args = [wrapperPath, userScriptRelPath, ...args]
+			}*/
+			args = [nodePath, ...args]
+			var file = nodePath
+			// Create the basics needed for creating a pocess. It basically does all that child_process.spawn() does internally.
 			var envPairs = []
 			var env = options.env || process.env
 			for (var key in env)
 				envPairs.push(key + '=' + env[key])
-			args = [file, ...args]
 			var params = Object.assign({file, args, envPairs}, options)
 			params.windowsVerbatimArguments = !!params.windowsVerbatimArguments
 			params.detached = !!params.detached
@@ -83,6 +101,7 @@ if (isMaster && isNode) {
 
 		// Browser's Worker style alias for ChildProccess.kill()
 		terminate() {
+			//this.kill(0)
 			this.kill()
 			// TODO: investigate if this implementation is enough
 			//this.kill('SIGINT')

@@ -1,4 +1,5 @@
 import events from 'events'
+import {removeFromArray} from './util.mjs'
 
 
 export var EventEmitter = events && events.EventEmitter

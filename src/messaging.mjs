@@ -2,6 +2,11 @@ import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 
 
+// Routes messages from EventSource as events into EventEmitter and vice versa.
+// EE mimics simplicity of Node style Emitters and uses underlying WebWorker API
+// of posting messages. Events are carried in custom object {event, args} with name and args.
+
+
 // Browser's Worker style alias for ChildProccess.on('message', ...)
 function addEventListener(name, listener) {
 	// Only allow routing 'message' event since that's what Node process' uses for passing IPC messages
@@ -100,13 +105,29 @@ if (isNode) {
 	}
 }
 
-var internalProcessEvents = ['newListener', 'removeListener', 'message', 'internalMessage', 'unref', 'error', 'uncaughtException']
+// NOTE: These are events internally used and emitted by Node's ChildProcess that we're inheriting from.
+//       The code calls .emit() which we are replacing and it will eventually trickle down to ._emitCrossThread()
+//       where these events need to be stopped. Because of couple of reasons:
+//       1) Prevent pollution of other thread (and its EventEmitter based 'process' object) with 'newListener' and other events.
+//       2) When the process is killed and ChildProcess emits 'exit' event, 
+var internalProcessEvents = [
+	// ChildProcess API
+	'error', 'exit', 'close', 'disconnect', 'unref',
+	// EventEmitter internals
+	'newListener', 'removeListener',
+	// IPC
+	'message', 'internalMessage',
+	// Other events
+	'uncaughtException',
+]
 
 // Circulates the event within EventEmitter as usual and also routes it into EventSource.
 function emit(name, ...args) {
 	this._emitLocally(name, ...args)
-	// node process builtin events
+	// Ignore Node process builtin events.
 	if (internalProcessEvents.includes(name)) return
+	// Prevent emiting to the thread that's been closed and we have no access to anymore.
+	if (this.connected === false) return
 	this._emitCrossThread(name, ...args)
 }
 
@@ -125,57 +146,11 @@ export function routeToThread(eeProto, eeInstance) {
 		//else
 		//	eeInstance._emitLocally('message', data)
 	}
-	//eeProto.addEventListener('message', e => onMessage(e.data))
+	//eeInstance.addEventListener('message', e => onMessage(e.data))
 	eeInstance.on('message', onMessage)
 }
 
 
-/*
-// Routes messages from EventSource as events into EventEmitter and vice versa.
-// EE mimics simplicity of Node style Emitters and uses underlying WebWorker API
-// of posting messages. Events are carried in custom object {event, args} with name
-// and arguments. This shields events from EventSource implementation. Mainly allows
-// safe usage any event name, including 'message' in emitter.emit('message', data).
-export function routeMessageEvents(eEmitter, eSource, transferArgs = true) {
-
-	if (isNode)
-		transferArgs = false
-
-	// Only circulates the event inside EventEmitter and does not passes it to EventSource
-	eEmitter.emitLocally = eEmitter.emit.bind(eEmitter)
-	// TODO: use addEventListener instead and carefuly handle memory leaks (remove listeners)
-	//       (mainly in master, when the worker closes)
-
-	// Only hands the event over to EventSource as 'message' event
-	eEmitter.emitToThread = (event, ...args) => {
-		var transferables = undefined
-		if (transferArgs)
-			transferables = getTransferablesDeepTraversal(args)
-		eSource.postMessage({event, args}, transferables)
-	}
-
-	// Circulates the event within EventEmitter as usual and also routes it into EventSource.
-	eEmitter.emit = (event, ...args) => {
-		eEmitter.emitLocally(event, ...args)
-		eEmitter.emitToThread(event, ...args)
-	}
-
-	// Handles receiving 'message' events from EventSource and routes them into EventEmitter
-	//eSource.addEventListener('message', onCrossThreadMessage)
-	eSource.onmessage = ({data}) => {
-		// Although we're only sending object with data property, we have to handle (and ignore) everything
-		// that potentially gets sent from outside of this module.
-		if (data.event)
-			eEmitter.emitLocally(data.event, ...data.args)
-		else
-			eEmitter.emitLocally('message', data)
-		// Hand the raw message over to onmessage property to align with Worker API
-		if (eEmitter.onmessage)
-			eEmitter.onmessage({data})
-	}
-
-}
-*/
 // Only ArrayBuffer, MessagePort and ImageBitmap types are transferable.
 // Very naive and probably even expensive way of finding all transferables.
 // TODO: Better heuristic of determining what's transferable

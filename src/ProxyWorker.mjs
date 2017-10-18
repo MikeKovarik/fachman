@@ -21,8 +21,10 @@ export var defaultOptions = {
 	workerStartupDelay: 0,
 	// TODO
 	autoTransferArgs: true,
+	// TODO
+	autoWrapWorker: true,
+	// TODO
 }
-
 
 // Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)
 // to the actual worker code, executes it there and waits for the woker to respond with result.
@@ -48,9 +50,19 @@ export class ProxyWorker extends MultiPlatformWorker {
 	}
 
 	constructor(workerPath, options = {}) {
-		// we will open user worker script which will load this library
-		if (options.useEsModules & isBrowser)
-			options.type = 'module'
+		// Inline worker creation. NOTE: disabled for now 'cause it only works in browser and not in node
+		//if (typeof workerPath === 'function')
+		//	workerPath = stringifyFunction(workerPath)
+		//else if (options.codeBlock === true || options.codeBlock === undefined && workerPath.length > 20)
+		//	workerPath = createBlobUrl(workerPath)
+		// We will open user worker script which will load this library.
+		if (options.type === undefined) {
+			// Only works in browser for now
+			if (workerPath.endsWith('.mjs'))
+				options.type = 'module'
+			else
+				(options.args = options.args || []).push('--experimental-modules')
+		}
 		super(workerPath, options)
 		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
 		// Apply options to this instance
@@ -135,21 +147,6 @@ export class ProxyWorker extends MultiPlatformWorker {
 			err.stack = payload.stack
 			reject(err)
 		}
-	}
-/*
-	// Kills worker thread and cancels all ongoing tasks
-	terminate() {
-		this.worker.terminate()
-		// Emitting event 'exit' to make it similar to Node's childproc & cluster
-		this._emitLocally('exit', 0)
-	}
-*/
-	// Cleanup after terminate()
-	destroy() {
-		// TODO: remove all event listeners on both EventSource (Worker) and EventEmitter (this)
-		// TODO: hook this on 'exit' event. Note: be careful with exit codes and autorestart
-		// TODO: make this call terminate() if this method is called directly
-		this.removeAllListeners()
 	}
 
 }

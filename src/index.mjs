@@ -5,6 +5,7 @@ export * from './shims.mjs'
 export * from './MultiPlatformWorker.mjs'
 export * from './ProxyWorker.mjs'
 export * from './Cluster.mjs'
+export {setContext} from './worker-thread.mjs'
 import './worker-thread.mjs'
 
 

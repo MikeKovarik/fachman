@@ -1,6 +1,23 @@
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 
 
+var context
+
+// Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
+// All defined functions and variables (that are not inside another block scope) are therefore also globals
+// that we can acces in 'self'
+if (isBrowser)
+	context = self
+
+// Node module code is wrapped and has custom inaccessible context. Scope 'this' points to an useless empty object.
+// By an off chance that user puts their methods in global we start with that and offer to use setScope(exports).
+if (isNode)
+	context = global
+
+export function setContext(newContext) {
+	context = newContext
+}
+
 if (isWorker) {
 
 	// Start listening from communication from master and handle tasks
@@ -26,7 +43,8 @@ if (isWorker) {
 		process.emit('task-end', {id, status, payload})
 	}
 
-	function getMethod(path, scope = self) {
+	function getMethod(path) {
+		var scope = context
 		if (path.includes('.')) {
 			var sections = path.split('.')
 			var section

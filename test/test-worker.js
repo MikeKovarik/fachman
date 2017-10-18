@@ -1,6 +1,5 @@
-var customImport = typeof self === 'object' ? importScripts : require
+var customImport = typeof require === 'function' ? require : importScripts
 customImport('../index.js')
-
 
 
 // helper variables
@@ -31,13 +30,11 @@ var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis)
 
 // WebWorker way of passing raw messages
 self.addEventListener('message', ({data}) => {
-	//console.log('worker - ael ', data, data === 'hello-self')
 	if (data === 'hello-self')
 		self.postMessage('hello from self')
 })
 // Node IPC way of passing raw messages
 process.on('message', data => {
-	//console.log('worker - proc', data, data === 'hello-process')
 	if (data === 'hello-process')
 		process.send('hello from process')
 })
@@ -49,14 +46,19 @@ process.on('custom-event', array => {
 	process.emit('custom-reply', array.join(' '))
 })
 
-process.on('kys-close', async () => {
+process.on('kys-close', async code => {
 	await timeout(100)
-	close()
+	close(code)
 })
 
-process.on('kys-process-kill', async () => {
+process.on('kys-process-exit', async code => {
 	await timeout(100)
-	process.kill()
+	process.exit(code)
+})
+
+process.on('kys-process-kill', async signal => {
+	await timeout(100)
+	process.kill(process.pid, signal)
 })
 
 function walkPath(path, scope = self) {

@@ -1,5 +1,5 @@
 import path from 'path'
-import {isMaster, isNode, childDetectArg, supportsNativeModules} from './platform.mjs'
+import {isMaster, isNode, supportsNativeModules} from './platform.mjs'
 import {fachmanPath} from './platform.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 import {ChildProcess} from 'child_process'
@@ -62,7 +62,7 @@ if (isMaster && isNode) {
 			// .spawn() arguments must include script file as a first item
 			// and then we're adding custom argument to ask for in the worker to determine
 			// if the process is master or worker.
-			var args = [workerPath, ...options.args, childDetectArg]
+			var args = [workerPath, ...options.args]
 			// Reroute stdin, stdout and stderr (0,1,2) to display logs in main process.
 			// Then create IPC channel for meesage exchange and any ammount of separate streams for piping.
 			var stdio = [0, 1, 2, 'ipc']

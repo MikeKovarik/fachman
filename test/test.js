@@ -238,6 +238,18 @@ describe('ProxyWorker', () => {
 
 	describe('context, autowrap', () => {
 
+		it(`resolvePath() simple`, async () => {
+			fachman.setContext({foobar: 42})
+			var result = fachman.resolvePath('foobar')
+			assert.equal(result, 42)
+		})
+
+		it(`resolvePath() nested`, async () => {
+			fachman.setContext({deeply: {nested: {foobar: 41}}})
+			var result = fachman.resolvePath('deeply.nested.foobar')
+			assert.equal(result, 41)
+		})
+
 		it('autowrap', async () => {
 			assert.equal(true, false)
 		})

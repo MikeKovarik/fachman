@@ -1073,27 +1073,50 @@ class Cluster extends exports.EventEmitter {
 
 }
 
-;
+var defaultContext = {};
 
 // Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
 // All defined functions and variables (that are not inside another block scope) are therefore also globals
 // that we can acces in 'self'
 if (exports.isBrowser)
-	exports.context = self
+	var fallbackContext = self;
 
 // Node module code is wrapped and has custom inaccessible context. Scope 'this' points to an useless empty object.
 // By an off chance that user puts their methods in global we start with that and offer to use setScope(exports).
 if (exports.isNode)
-	exports.context = global
+	var fallbackContext = global;
 
-function setContext(newContext) {
-	exports.context = newContext
+var contexts = [fallbackContext, defaultContext];
+
+function setContext(customContext) {
+	contexts.push(customContext);
 }
 
-var customContext = {};
 function register(value, name = value.name) {
-	customContext[name] = value
-	exports.context = customContext
+	defaultContext[name] = value;
+}
+
+function resolvePath(path$$1) {
+	var result;
+	var context;
+	var ci = contexts.length;
+	if (path$$1.includes('.')) {
+		var sections = path$$1.split('.').reverse();
+		var section;
+		while (!result && --ci) {
+			context = contexts[ci]
+			let si = sections.length;
+			while (section = sections[--si])
+				context = context[section]
+			result = context;
+		}
+		return result
+	} else {
+		while (!result && --ci) {
+			result = contexts[ci][path$$1];
+		}
+		return result
+	}
 }
 
 if (exports.isWorker) {
@@ -1121,19 +1144,6 @@ if (exports.isWorker) {
 		process.emit('task-end', {id, status, payload})
 	}
 
-}
-
-function walkPath(path$$1) {
-	var scope = exports.context;
-	if (path$$1.includes('.')) {
-		var sections = path$$1.split('.');
-		var section;
-		while (section = sections.shift())
-			scope = scope[section];
-		return scope
-	} else {
-		return scope[path$$1]
-	}
 }
 
 if (exports.isNode && exports.isWorker && launchedAsWrapper) {
@@ -1172,7 +1182,7 @@ function relativizie(string) {
 
 exports.setContext = setContext;
 exports.register = register;
-exports.walkPath = walkPath;
+exports.resolvePath = resolvePath;
 exports.defaultOptions = defaultOptions;
 exports.ProxyWorker = ProxyWorker$1;
 exports.createTask = createTask;

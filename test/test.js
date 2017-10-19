@@ -236,6 +236,81 @@ describe('ProxyWorker', () => {
 	})
 
 
+	describe('context, autowrap', () => {
+
+		it('autowrap', async () => {
+			assert.equal(true, false)
+		})
+		it('autowrap false', async () => {
+			assert.equal(true, false)
+		})
+
+		describe('manual setContext()', () => {
+
+			var worker
+			before(async () => worker = new ProxyWorker('worker-module-setcontext.js'))
+			after(async () => worker.terminate())
+
+			it('should locate simple methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'echo'))
+			})
+
+			it('should locate nested methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'deeply.nested.echo'))
+			})
+
+		})
+
+		describe('manual register()', () => {
+
+			var worker
+			before(async () => worker = new ProxyWorker('worker-module-register.js'))
+			after(async () => worker.terminate())
+
+			it('should locate simple methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'echo'))
+			})
+
+			it('should locate nested methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'deeply.nested.echo'))
+			})
+
+		})
+
+		describe('autocontext cjs', () => {
+
+			var worker
+			before(async () => worker = new ProxyWorker('worker-module-cjs.js'))
+			after(async () => worker.terminate())
+
+			it('should locate simple methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'echo'))
+			})
+
+			it('should locate nested methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'deeply.nested.echo'))
+			})
+
+		})
+
+		describe('autocontext esm', () => {
+
+			var worker
+			before(async () => worker = new ProxyWorker('worker-module-esm.mjs'))
+			after(async () => worker.terminate())
+
+			it('should locate simple methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'echo'))
+			})
+
+			it('should locate nested methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'deeply.nested.echo'))
+			})
+
+		})
+
+	})
+
 	describe('task invocation', () => {
 
 		// fixture worker
@@ -246,13 +321,8 @@ describe('ProxyWorker', () => {
 		})
 		after(async () => worker.terminate())
 
-		it(`resolving simple path`, async () => {
-			var type = await getTypeOfNode(worker, 'asyncEcho')
-			console.log('type', type)
-		})
-
 		it(`invokeTask()`, async () => {
-			//await awaitOn(worker, 'online')
+			//await onPromise(worker, 'online')
 			var startTime = Date.now()
 			var input = 'this will get returned in 100ms'
 			var output = await worker.invokeTask({
@@ -265,30 +335,26 @@ describe('ProxyWorker', () => {
 			assert.isBelow(Date.now() - startTime, 200)
 		})
 
-		it('proxy should handle simple sync methods', async () => {
+
+		it('proxy should execute simple sync methods', async () => {
 			var result = await proxy.syncHello()
 			assert.equal(result, 'hello world')
 		})
 
-		it('proxy should handle simple async methods', async () => {
+		it('proxy should execute simple async methods', async () => {
 			var result = await proxy.asyncHello()
 			assert.equal(result, 'hello world')
 		})
 
-		it('proxy should handle nested sync methods', async () => {
-			var result = await proxy.deeply.nested.syncHello()
-			assert.equal(result, 'hello world')
-		})
-
-		it('proxy should handle nested async methods', async () => {
-			var result = await proxy.deeply.nested.asyncHello()
-			assert.equal(result, 'hello world')
-		})
-
-		it('proxy should handle arguments and return result', async () => {
+		it('proxy should execute arguments and return result', async () => {
 			// returns 2+3 * 2+3
 			var result = await proxy.compute(2, 3)
 			assert.equal(result, 25)
+		})
+
+		it('proxy should execute nested methods', async () => {
+			var result = await proxy.deeply.nested.syncHello()
+			assert.equal(result, 'hello world')
 		})
 
 		it(`tasks should be removed from _taskResolvers after finishing`, async () => {
@@ -578,10 +644,10 @@ describe('process', () => {
 	it('self.close() should close the worker with', async () => {
 		var worker = new ProxyWorker(workerPath)
 		assert.isFalse(worker.online)
-		await awaitOn(worker, 'online')
+		await onPromise(worker, 'online')
 		assert.isTrue(worker.online)
 		worker.emit('kys-close')
-		await awaitOn(worker, 'exit')
+		await onPromise(worker, 'exit')
 		assert.isFalse(worker.running)
 		assert.isFalse(worker.online)
 	})
@@ -589,10 +655,10 @@ describe('process', () => {
 	it('process.exit() should close the worker with', async () => {
 		var worker = new ProxyWorker(workerPath)
 		assert.isFalse(worker.online)
-		await awaitOn(worker, 'online')
+		await onPromise(worker, 'online')
 		assert.isTrue(worker.online)
 		worker.emit('kys-process-exit')
-		await awaitOn(worker, 'exit')
+		await onPromise(worker, 'exit')
 		assert.isFalse(worker.running)
 		assert.isFalse(worker.online)
 	})
@@ -708,7 +774,7 @@ describe('inline worker creation', () => {
 })
 */
 
-function awaitOn(scope, event) {
+function onPromise(scope, event) {
 	return new Promise(resolve => scope.on(event, resolve))
 }
 
@@ -737,6 +803,11 @@ function getTypeOfNode(worker, path) {
 				resolve(data.result)
 		})
 	})
+}
+
+function getTypeOf(worker, path) {
+	worker.emit('typeof', path)
+	return onPromise(worker, 'typeis')
 }
 
 function createFixture() {

@@ -48,10 +48,12 @@ export function setPath(newPath) {
 	fachmanDirPath = fachmanPath.substr(0, fachmanPath.lastIndexOf('/'))
 }
 
-if (isBrowser)
-	setPath(document.currentScript.src)
-else
-	setPath(__filename)
+if (isMaster) {
+	if (isBrowser)
+		setPath(document.currentScript.src)
+	else
+		setPath(__filename)
+}
 
 
 // https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables

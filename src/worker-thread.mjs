@@ -1,7 +1,7 @@
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 
 
-var context
+export var context
 
 // Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
 // All defined functions and variables (that are not inside another block scope) are therefore also globals
@@ -18,6 +18,12 @@ export function setContext(newContext) {
 	context = newContext
 }
 
+var customContext = {}
+export function register(value, name = value.name) {
+	customContext[name] = value
+	context = customContext
+}
+
 if (isWorker) {
 
 	// Start listening from communication from master and handle tasks
@@ -25,7 +31,7 @@ if (isWorker) {
 
 	async function executeTask(task) {
 		var {id, path, args} = task
-		var theMethod = getMethod(path)
+		var theMethod = walkPath(path)
 		var status = false
 		var payload
 		if (!theMethod) {
@@ -43,17 +49,17 @@ if (isWorker) {
 		process.emit('task-end', {id, status, payload})
 	}
 
-	function getMethod(path) {
-		var scope = context
-		if (path.includes('.')) {
-			var sections = path.split('.')
-			var section
-			while (section = sections.shift())
-				scope = scope[section]
-			return scope
-		} else {
-			return scope[path]
-		}
-	}
+}
 
+export function walkPath(path) {
+	var scope = context
+	if (path.includes('.')) {
+		var sections = path.split('.')
+		var section
+		while (section = sections.shift())
+			scope = scope[section]
+		return scope
+	} else {
+		return scope[path]
+	}
 }

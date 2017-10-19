@@ -59,10 +59,12 @@ function setPath(newPath) {
 	fachmanDirPath = fachmanPath.substr(0, fachmanPath.lastIndexOf('/'))
 }
 
-if (exports.isBrowser)
-	setPath(document.currentScript.src)
-else
-	setPath(__filename)
+if (exports.isMaster) {
+	if (exports.isBrowser)
+		setPath(document.currentScript.src)
+	else
+		setPath(__filename)
+}
 
 
 // https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables
@@ -1071,21 +1073,27 @@ class Cluster extends exports.EventEmitter {
 
 }
 
-var context;
+;
 
 // Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
 // All defined functions and variables (that are not inside another block scope) are therefore also globals
 // that we can acces in 'self'
 if (exports.isBrowser)
-	context = self
+	exports.context = self
 
 // Node module code is wrapped and has custom inaccessible context. Scope 'this' points to an useless empty object.
 // By an off chance that user puts their methods in global we start with that and offer to use setScope(exports).
 if (exports.isNode)
-	context = global
+	exports.context = global
 
 function setContext(newContext) {
-	context = newContext
+	exports.context = newContext
+}
+
+var customContext = {};
+function register(value, name = value.name) {
+	customContext[name] = value
+	exports.context = customContext
 }
 
 if (exports.isWorker) {
@@ -1095,7 +1103,7 @@ if (exports.isWorker) {
 
 	async function executeTask(task) {
 		var {id, path: path$$1, args} = task;
-		var theMethod = getMethod(path$$1);
+		var theMethod = walkPath(path$$1);
 		var status = false;
 		var payload;
 		if (!theMethod) {
@@ -1113,19 +1121,19 @@ if (exports.isWorker) {
 		process.emit('task-end', {id, status, payload})
 	}
 
-	function getMethod(path$$1) {
-		var scope = context;
-		if (path$$1.includes('.')) {
-			var sections = path$$1.split('.');
-			var section;
-			while (section = sections.shift())
-				scope = scope[section]
-			return scope
-		} else {
-			return scope[path$$1]
-		}
-	}
+}
 
+function walkPath(path$$1) {
+	var scope = exports.context;
+	if (path$$1.includes('.')) {
+		var sections = path$$1.split('.');
+		var section;
+		while (section = sections.shift())
+			scope = scope[section];
+		return scope
+	} else {
+		return scope[path$$1]
+	}
 }
 
 if (exports.isNode && exports.isWorker && launchedAsWrapper) {
@@ -1163,6 +1171,8 @@ function relativizie(string) {
 // TODO: handle SIGTERM and SIGINT in Node
 
 exports.setContext = setContext;
+exports.register = register;
+exports.walkPath = walkPath;
 exports.defaultOptions = defaultOptions;
 exports.ProxyWorker = ProxyWorker$1;
 exports.createTask = createTask;

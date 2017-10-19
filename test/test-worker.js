@@ -1,5 +1,5 @@
-var customImport = typeof require === 'function' ? require : importScripts
-customImport('../index.js')
+//var customImport = typeof require === 'function' ? require : importScripts
+//customImport('../index.js')
 
 
 // helper variables
@@ -125,3 +125,8 @@ function modifyArray(array) {
 function modifyString(string) {
 	return string
 }
+
+
+
+exports.syncHello = syncHello
+exports.asyncHello = asyncHello

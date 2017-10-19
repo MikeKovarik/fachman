@@ -10,9 +10,10 @@ export var isNode = false
 // is true when browser renderer with native Worker api is available.
 export var isBrowser = false
 
-if (typeof process === 'object' && process.versions.node) {
+if (typeof process === 'object' && process.versions.node && process.argv.length) {
 	isNode = true
-	isMaster = process.send === undefined
+	// master/worker detection relies on IPC connection between processes.
+	isMaster = process.send === undefined && process.connected === undefined
 	isWorker = !isMaster
 }
 
@@ -23,3 +24,58 @@ if (typeof navigator === 'object') {
 	else if (typeof document === 'object')
 		isMaster = true
 }
+
+// Only available in node (browser's alternative is constructing blob url wrapper)
+export var launchedAsWrapper = false
+if (isNode) {
+	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
+	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
+	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
+	var scriptPath = process.argv[1]
+	if (scriptPath === __filename) {
+		process.argv.splice(1,1)
+		launchedAsWrapper = true
+	}
+}
+
+export var fachmanPath
+export var fachmanDirPath
+
+export function setPath(newPath) {
+	// Sanitize the path.
+	fachmanPath = newPath.replace(/\\/g, '/')
+	// Keep only the directory path, ignore the file.
+	fachmanDirPath = fachmanPath.substr(0, fachmanPath.lastIndexOf('/'))
+}
+
+if (isBrowser)
+	setPath(document.currentScript.src)
+else
+	setPath(__filename)
+
+
+// https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables
+export var supportsNativeModules = typeof module === 'undefined'
+								&& typeof exports === 'undefined'
+								&& typeof require === 'undefined'
+								&& typeof __filename === 'undefined'
+
+// Modules support in workers is a ways off for now.
+export var supportsWorkerModules = false
+/*
+if (isBrowser) {
+	var detectionPromise = new Promise((resolve, reject) => {
+		var code = `self.postMessage(typeof importScripts)`
+		code = createBlobUrl(code)
+		var dummy = new Worker(code, {type: 'module'})
+		dummy.onmessage = function({data}) {
+			supportsWorkerModules = data === 'undefined'
+			dummy.terminate()
+		}
+		dummy.onerror = err => {
+			reject(err)
+			dummy.terminate()
+		}
+	})
+}
+*/

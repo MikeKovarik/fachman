@@ -9,9 +9,6 @@ events = events && events.hasOwnProperty('default') ? events['default'] : events
 net = net && net.hasOwnProperty('default') ? net['default'] : net;
 path = path && path.hasOwnProperty('default') ? path['default'] : path;
 
-var childDetectArg = 'is-child-worker';
-
-
 // is true if it's the main UI thread in browser, or main thread in Node
 exports.isMaster = false;
 
@@ -24,14 +21,11 @@ exports.isNode = false;
 // is true when browser renderer with native Worker api is available.
 exports.isBrowser = false;
 
-if (typeof process === 'object' && process.versions.node) {
+if (typeof process === 'object' && process.versions.node && process.argv.length) {
 	exports.isNode = true
-	if (process.argv.includes(childDetectArg)) {
-		process.argv = process.argv.slice(0, -1)
-		exports.isWorker = true
-	} else {
-		exports.isMaster = true
-	}
+	// master/worker detection relies on IPC connection between processes.
+	exports.isMaster = process.send === undefined && process.connected === undefined
+	exports.isWorker = !exports.isMaster
 }
 
 if (typeof navigator === 'object') {
@@ -42,17 +36,33 @@ if (typeof navigator === 'object') {
 		exports.isMaster = true
 }
 
+// Only available in node (browser's alternative is constructing blob url wrapper)
+var launchedAsWrapper = false;
+if (exports.isNode) {
+	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
+	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
+	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
+	var scriptPath = process.argv[1];
+	if (scriptPath === __filename) {
+		process.argv.splice(1,1)
+		launchedAsWrapper = true
+	}
+}
 
 var fachmanPath;
-
-if (typeof document === 'object')
-	fachmanPath = document.currentScript.src
-else
-	fachmanPath = __filename
+var fachmanDirPath;
 
 function setPath(newPath) {
-	fachmanPath = newPath
+	// Sanitize the path.
+	fachmanPath = newPath.replace(/\\/g, '/')
+	// Keep only the directory path, ignore the file.
+	fachmanDirPath = fachmanPath.substr(0, fachmanPath.lastIndexOf('/'))
 }
+
+if (exports.isBrowser)
+	setPath(document.currentScript.src)
+else
+	setPath(__filename)
 
 
 // https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables
@@ -446,7 +456,7 @@ if (exports.isMaster && exports.isBrowser) {
 	BrowserWorker = class BrowserWorker extends self.Worker {
 
 		constructor(workerPath, options = {}) {
-			/*if (options.type === 'module' && supportsWorkerModules) {
+			/*if (options.type === 'module' && supportsWorkerModules && options.autoWrapWorker) {
 				console.log('FIXME')
 				var code = `
 					import fachman from '${fachmanPath}'
@@ -561,19 +571,20 @@ if (exports.isMaster && exports.isNode) {
 		constructor(nodePath, args = [], options = {}) {
 			// ChildProcess constructor doesn't take any arugments. But later on it's initialized with .spawn() method.
 			super()
-			/*if (options.autoContext !== false) {
-				var userScriptRelPath = args.shift()
-				if (options.type === 'module' && supportsNativeModules) {
-					// import mjs wrapper
-					var wrapperName = 'wrapper.mjs'
-				} else {
-					// import js wrapper
-					var wrapperName = 'wrapper.js'
-				}
-				var fachmanDirPath = __dirname
-				var wrapperPath = path.join(fachmanDirPath, wrapperName)
+			if (options.autoWrapWorker !== false) {
+				// If the user script file has .mjs ending (singaling it's written as ES Module) and Node has native support
+				// then import unbundled ES Module version of fachman.
+				var wrapperExt = options.type === 'module' && supportsNativeModules ? 'mjs' : 'js';
+				var wrapperName = `index.${wrapperExt}`;
+				// Point to the wrapper file in the root of the fachman folder (next to index).
+				// The path can be absolute because node would do that to relative paths as well.
+				var wrapperPath = path.join(fachmanDirPath, wrapperName);
+				// User's (NodeWorker in this case) defines his script to launch as a first argument.
+				var userScriptRelPath = args.shift();
+				userScriptRelPath = path.relative(fachmanDirPath, userScriptRelPath)
+				// Prepend args with path to user script and our wrapper that will run fachman and the script.
 				args = [wrapperPath, userScriptRelPath, ...args]
-			}*/
+			}
 			args = [nodePath, ...args]
 			var file = nodePath;
 			// Create the basics needed for creating a pocess. It basically does all that child_process.spawn() does internally.
@@ -600,7 +611,7 @@ if (exports.isMaster && exports.isNode) {
 			// .spawn() arguments must include script file as a first item
 			// and then we're adding custom argument to ask for in the worker to determine
 			// if the process is master or worker.
-			var args = [workerPath, ...options.args, childDetectArg];
+			var args = [workerPath, ...options.args];
 			// Reroute stdin, stdout and stderr (0,1,2) to display logs in main process.
 			// Then create IPC channel for meesage exchange and any ammount of separate streams for piping.
 			var stdio = [0, 1, 2, 'ipc'];
@@ -754,11 +765,13 @@ var defaultOptions = {
 	startupDelay: 100,
 	// Spacing between creation of each worker.
 	workerStartupDelay: 0,
-	// TODO
+	// Browser only
+	// Each postMessage (both raw or through any other higher level API) data is crawled and searched for
+	// arrays, buffers and arraybuffers that can be have their memory transfered from one thread to another.
 	autoTransferArgs: true,
-	// TODO
+	// TODO - wrapping script in node by executing fachman and requiring it from there
+	// TODO - constructing custom blobl url in browser (es modules only, not available yet)
 	autoWrapWorker: true,
-	// TODO
 };
 
 // Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)
@@ -1113,6 +1126,38 @@ if (exports.isWorker) {
 		}
 	}
 
+}
+
+if (exports.isNode && exports.isWorker && launchedAsWrapper) {
+	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
+	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
+	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
+	var userScriptRelPath = process.argv[1];
+	//userScriptRelPath = './test/' + userScriptRelPath
+	//userScriptRelPath = './' + userScriptRelPath
+	userScriptRelPath = sanitizePath(userScriptRelPath)
+	try {
+		// Try to load the path as is (it could be a whole module)
+		var ctx = require(userScriptRelPath);
+	} catch (e) {
+		// If the loading fails, add ./ and try again
+		userScriptRelPath = relativizie(userScriptRelPath)
+		var ctx = require(userScriptRelPath);
+	}
+	// Handle transpiler/bundle ES module format using 'default' key.
+	if (ctx.hasOwnProperty('default'))
+		ctx = ctx['default']
+	// And finally set the export context of the module as fachmans lookup input.
+	setContext(ctx)
+}
+
+function sanitizePath(string) {
+	return string.replace(/\\/g, '/')
+}
+
+function relativizie(string) {
+	if (!string.startsWith('./') && !string.startsWith('../'))
+		return './' + string
 }
 
 // TODO: handle SIGTERM and SIGINT in Node

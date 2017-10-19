@@ -1,6 +1,5 @@
 import path from 'path'
-import {isMaster, isNode, supportsNativeModules} from './platform.mjs'
-import {fachmanPath} from './platform.mjs'
+import {isMaster, isNode, fachmanDirPath, supportsNativeModules} from './platform.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 import {ChildProcess} from 'child_process'
 import {shimBrowserIpc, routeToEventSource} from './messaging.mjs'
@@ -23,19 +22,20 @@ if (isMaster && isNode) {
 		constructor(nodePath, args = [], options = {}) {
 			// ChildProcess constructor doesn't take any arugments. But later on it's initialized with .spawn() method.
 			super()
-			/*if (options.autoContext !== false) {
-				var userScriptRelPath = args.shift()
-				if (options.type === 'module' && supportsNativeModules) {
-					// import mjs wrapper
-					var wrapperName = 'wrapper.mjs'
-				} else {
-					// import js wrapper
-					var wrapperName = 'wrapper.js'
-				}
-				var fachmanDirPath = __dirname
+			if (options.autoWrapWorker !== false) {
+				// If the user script file has .mjs ending (singaling it's written as ES Module) and Node has native support
+				// then import unbundled ES Module version of fachman.
+				var wrapperExt = options.type === 'module' && supportsNativeModules ? 'mjs' : 'js'
+				var wrapperName = `index.${wrapperExt}`
+				// Point to the wrapper file in the root of the fachman folder (next to index).
+				// The path can be absolute because node would do that to relative paths as well.
 				var wrapperPath = path.join(fachmanDirPath, wrapperName)
+				// User's (NodeWorker in this case) defines his script to launch as a first argument.
+				var userScriptRelPath = args.shift()
+				userScriptRelPath = path.relative(fachmanDirPath, userScriptRelPath)
+				// Prepend args with path to user script and our wrapper that will run fachman and the script.
 				args = [wrapperPath, userScriptRelPath, ...args]
-			}*/
+			}
 			args = [nodePath, ...args]
 			var file = nodePath
 			// Create the basics needed for creating a pocess. It basically does all that child_process.spawn() does internally.

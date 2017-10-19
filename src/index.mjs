@@ -7,6 +7,7 @@ export * from './ProxyWorker.mjs'
 export * from './Cluster.mjs'
 export {setContext} from './worker-thread.mjs'
 import './worker-thread.mjs'
+import './construct-wrapper.mjs'
 
 
 // TODO: handle SIGTERM and SIGINT in Node

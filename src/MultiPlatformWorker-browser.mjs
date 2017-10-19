@@ -12,7 +12,7 @@ if (isMaster && isBrowser) {
 	BrowserWorker = class BrowserWorker extends self.Worker {
 
 		constructor(workerPath, options = {}) {
-			/*if (options.type === 'module' && supportsWorkerModules) {
+			/*if (options.type === 'module' && supportsWorkerModules && options.autoWrapWorker) {
 				console.log('FIXME')
 				var code = `
 					import fachman from '${fachmanPath}'

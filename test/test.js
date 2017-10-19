@@ -275,12 +275,12 @@ describe('ProxyWorker', () => {
 			assert.equal(result, 'hello world')
 		})
 
-		it('proxy should handle simple sync methods', async () => {
+		it('proxy should handle nested sync methods', async () => {
 			var result = await proxy.deeply.nested.syncHello()
 			assert.equal(result, 'hello world')
 		})
 
-		it('proxy should handle simple async methods', async () => {
+		it('proxy should handle nested async methods', async () => {
 			var result = await proxy.deeply.nested.asyncHello()
 			assert.equal(result, 'hello world')
 		})

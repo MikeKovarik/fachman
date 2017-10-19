@@ -19,11 +19,13 @@ export var defaultOptions = {
 	startupDelay: 100,
 	// Spacing between creation of each worker.
 	workerStartupDelay: 0,
-	// TODO
+	// Browser only
+	// Each postMessage (both raw or through any other higher level API) data is crawled and searched for
+	// arrays, buffers and arraybuffers that can be have their memory transfered from one thread to another.
 	autoTransferArgs: true,
-	// TODO
+	// TODO - wrapping script in node by executing fachman and requiring it from there
+	// TODO - constructing custom blobl url in browser (es modules only, not available yet)
 	autoWrapWorker: true,
-	// TODO
 }
 
 // Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)

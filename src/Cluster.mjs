@@ -2,7 +2,8 @@ import {timeout, MAX_THREADS, removeFromArray} from './util.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {createNestedProxy} from './nestedProxy.mjs'
-import {defaultOptions, createTask} from './ProxyWorker.mjs'
+import {ProxyWorker, createTask} from './ProxyWorker.mjs'
+import {defaultOptions} from './defaultOptions.mjs'
 
 
 // The main hub controlling all the child workers

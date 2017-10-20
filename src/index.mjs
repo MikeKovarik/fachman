@@ -5,8 +5,8 @@ export * from './shims.mjs'
 export * from './MultiPlatformWorker.mjs'
 export * from './ProxyWorker.mjs'
 export * from './Cluster.mjs'
-export {setContext, register, resolvePath} from './worker-thread.mjs'
-import './worker-thread.mjs'
+export * from './worker-thread.mjs'
+//import './worker-thread.mjs'
 import './construct-wrapper.mjs'
 
 

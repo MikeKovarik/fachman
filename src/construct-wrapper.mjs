@@ -1,4 +1,5 @@
 import {isWorker, isNode, isBrowser, launchedAsWrapper} from './platform.mjs'
+import {fachmanRelPath} from './platform.mjs'
 import {setContext} from './worker-thread.mjs'
 
 
@@ -23,13 +24,35 @@ if (isNode && isWorker && launchedAsWrapper) {
 		ctx = ctx['default']
 	// And finally set the export context of the module as fachmans lookup input.
 	setContext(ctx)
+
+	function sanitizePath(string) {
+		return string.replace(/\\/g, '/')
+	}
+
+	function relativizie(string) {
+		if (!string.startsWith('./') && !string.startsWith('../'))
+			return './' + string
+	}
 }
 
-function sanitizePath(string) {
-	return string.replace(/\\/g, '/')
+
+// Browser is capable of creating worker code dynamically in browser by turnin the code into blob and then to url.
+
+export function createBlobUrlWrapper(workerPath, options) {
+	if (options.type === 'module' && supportsWorkerModules) {
+		var code = `
+			import fachman from '${fachmanRelPath}'
+			import * as scope from '${workerPath}'
+			fachman.setScope(scope)`
+	} else {
+		var code = `
+			importScripts('${fachmanRelPath}', '${workerPath}')
+			self.fachman.setScope(scope)`
+	}
+	return createBlobUrl(code)
 }
 
-function relativizie(string) {
-	if (!string.startsWith('./') && !string.startsWith('../'))
-		return './' + string
+function createBlobUrl(string) {
+	var blob = new Blob([string], {type: 'application/javascript'})
+	return URL.createObjectURL(blob)
 }

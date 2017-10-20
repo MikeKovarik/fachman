@@ -43,6 +43,6 @@ fachman.register(compute)
 
 
 process.on('typeof', path => {
-	var found = fachman.walkPath(path)
+	var found = fachman.resolvePath(path)
 	process.emit('typeis', typeof found)
 })

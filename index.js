@@ -1,15 +1,45 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('os'), require('events'), require('net'), require('path'), require('child_process')) :
-	typeof define === 'function' && define.amd ? define(['exports', 'os', 'events', 'net', 'path', 'child_process'], factory) :
-	(factory((global.fachman = {}),global.os,global.events,global.net,global.path,global.child_process));
-}(this, (function (exports,os,events,net,path,child_process) { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('path'), require('os'), require('events'), require('net'), require('child_process')) :
+	typeof define === 'function' && define.amd ? define(['exports', 'path', 'os', 'events', 'net', 'child_process'], factory) :
+	(factory((global.fachman = {}),global.path,global.os,global.events,global.net,global.child_process));
+}(this, (function (exports,path,os,events,net,child_process) { 'use strict';
 
+path = path && path.hasOwnProperty('default') ? path['default'] : path;
 os = os && os.hasOwnProperty('default') ? os['default'] : os;
 events = events && events.hasOwnProperty('default') ? events['default'] : events;
 net = net && net.hasOwnProperty('default') ? net['default'] : net;
-path = path && path.hasOwnProperty('default') ? path['default'] : path;
 
-// is true if it's the main UI thread in browser, or main thread in Node
+var path$1 = path || {};
+
+if (!path$1.relative) {
+
+	function splitSections(path$$1) {
+		path$$1 = path$$1.replace(/\\/g, '/');
+		if (path$$1.includes('://'))
+			return path$$1.slice(path$$1.indexOf('://') + 3).split('/')
+		else
+			return path$$1.split('/')
+	}
+
+	path$1.relative = function(from, to) {
+		from = splitSections(from);
+		to = splitSections(to);
+		var length = Math.min(from.length, to.length);
+		var sameParts = length;
+		for (var i = 0; i < length; i++) {
+			if (from[i] !== to[i]) {
+				sameParts = i;
+				break
+			}
+		}
+		return Array(from.length - 1 - sameParts)
+			.fill('..')
+			.concat(to.slice(sameParts))
+			.join('/')
+	};
+
+}
+
 exports.isMaster = false;
 
 // is true it it's a WebWorker or a child spawned by Node master process.
@@ -22,18 +52,18 @@ exports.isNode = false;
 exports.isBrowser = false;
 
 if (typeof process === 'object' && process.versions.node && process.argv.length) {
-	exports.isNode = true
+	exports.isNode = true;
 	// master/worker detection relies on IPC connection between processes.
-	exports.isMaster = process.send === undefined && process.connected === undefined
-	exports.isWorker = !exports.isMaster
+	exports.isMaster = process.send === undefined && process.connected === undefined;
+	exports.isWorker = !exports.isMaster;
 }
 
 if (typeof navigator === 'object') {
-	exports.isBrowser = true
+	exports.isBrowser = true;
 	if (typeof importScripts === 'function')
-		exports.isWorker = true
+		exports.isWorker = true;
 	else if (typeof document === 'object')
-		exports.isMaster = true
+		exports.isMaster = true;
 }
 
 // Only available in node (browser's alternative is constructing blob url wrapper)
@@ -44,37 +74,60 @@ if (exports.isNode) {
 	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
 	var scriptPath = process.argv[1];
 	if (scriptPath === __filename) {
-		process.argv.splice(1,1)
-		launchedAsWrapper = true
+		process.argv.splice(1,1);
+		launchedAsWrapper = true;
 	}
 }
 
 var fachmanPath;
+var fachmanRelPath;
 var fachmanDirPath;
 
-function setPath(newPath) {
-	// Sanitize the path.
-	fachmanPath = newPath.replace(/\\/g, '/')
-	// Keep only the directory path, ignore the file.
-	fachmanDirPath = fachmanPath.substr(0, fachmanPath.lastIndexOf('/'))
+
+function trimDirPath(path$$1) {
+	return path$$1.substr(0, path$$1.lastIndexOf('/'))
+}
+function sanitizePath(path$$1) {
+	return path$$1.replace(/\\/g, '/')
+}
+
+function getUserScriptCwd() {
+	if (typeof process === 'object' && process.cwd)
+		return process.cwd()
+	else
+		return trimDirPath(location.href)
+}
+
+function getModuleIndexPath() {
+	if (typeof __filename === 'undefined')
+		return document.currentScript.src
+	// TODO: handle unbundled ESM version where __filename === 'src/platform.mjs' instead of 'index.mjs/js'
+	//else if ()
+	//	return __filename
+	else
+		return __filename
 }
 
 if (exports.isMaster) {
-	if (exports.isBrowser)
-		setPath(document.currentScript.src)
-	else
-		setPath(__filename)
+	// Sanitize the path.
+	fachmanPath = sanitizePath(getModuleIndexPath());
+	// Get current location of the app that imports fachman
+	var cwd = sanitizePath(getUserScriptCwd() + '/');
+	//
+	fachmanRelPath = path$1.relative(cwd, fachmanPath);
+	// Keep only the directory path, ignore the file.
+	fachmanDirPath = trimDirPath(fachmanPath);
 }
 
 
 // https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables
 var supportsNativeModules = typeof module === 'undefined'
 								&& typeof exports === 'undefined'
-								&& typeof require === 'undefined'
-								&& typeof __filename === 'undefined';
+								&& typeof require === 'undefined';
+								//&& typeof __filename === 'undefined'
 
 // Modules support in workers is a ways off for now.
-var supportsWorkerModules = false;
+var supportsWorkerModules$1 = false;
 /*
 if (isBrowser) {
 	var detectionPromise = new Promise((resolve, reject) => {
@@ -97,9 +150,9 @@ var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis)
 
 exports.MAX_THREADS = 0;
 if (exports.isNode)
-	exports.MAX_THREADS = os.cpus().length || 1
+	exports.MAX_THREADS = os.cpus().length || 1;
 else
-	exports.MAX_THREADS = navigator.hardwareConcurrency || 1
+	exports.MAX_THREADS = navigator.hardwareConcurrency || 1;
 
 function removeFromArray(array, item) {
 	var index = array.indexOf(item);
@@ -116,45 +169,45 @@ if (!exports.EventEmitter) {
 	// Note: using unshift() (and looping backwards) instead of push() to prevent
 	//       issues with self-removing once() listeners
 	exports.EventEmitter = function EventEmitter() {
-		this._map = new Map
-	}
+		this._map = new Map;
+	};
 
 	exports.EventEmitter.prototype._getEventCallbacks = function(name) {
 		if (!this._map.has(name))
-			this._map.set(name, [])
+			this._map.set(name, []);
 		return this._map.get(name)
-	}
+	};
 
 	exports.EventEmitter.prototype.emit = function(name, ...args) {
 		var callbacks = this._getEventCallbacks(name);
 		var i = callbacks.length;
 		while (i--) {
-			callbacks[i](...args)
+			callbacks[i](...args);
 		}
-	}
+	};
 
 	exports.EventEmitter.prototype.on = function(name, cb) {
-		this._getEventCallbacks(name).unshift(cb)
-	}
+		this._getEventCallbacks(name).unshift(cb);
+	};
 
 	exports.EventEmitter.prototype.once = function(name, cb) {
 		var oneTimeCb = (...args) => {
-			this.removeListener(name, oneTimeCb)
-			cb(...args)
+			this.removeListener(name, oneTimeCb);
+			cb(...args);
 		};
-		this.on(name, oneTimeCb)
-	}
+		this.on(name, oneTimeCb);
+	};
 
 	exports.EventEmitter.prototype.removeListener = function(name, cb) {
-		removeFromArray(this._getEventCallbacks(name), cb)
-	}
+		removeFromArray(this._getEventCallbacks(name), cb);
+	};
 
 	exports.EventEmitter.prototype.removeAllListeners = function(name) {
 		if (name)
-			this._map.delete(name)
+			this._map.delete(name);
 		else
-			this._map.clear()
-	}
+			this._map.clear();
+	};
 
 }
 
@@ -167,41 +220,41 @@ function addEventListener(name, listener) {
 	// To shim addEventListener without breaking the 'e.data', we need to intercept and wrap each emitted data.
 	var wrappedListener = data => listener({data});
 	// Listen on messages EventEmitter emits, and route them to the EventSource (calling them into user's listener)
-	this.on('message', wrappedListener)
+	this.on('message', wrappedListener);
 	// Since we're not using user's listener, but a wrapped version of it, we need to store both of them
 	// for when/if removeEventListener is called to stop listening.
 	if (!this._listeners)
-		this._listeners = new Map
-	this._listeners.set(listener, wrappedListener)
+		this._listeners = new Map;
+	this._listeners.set(listener, wrappedListener);
 }
 
 // Browser's Worker style alias for ChildProccess.removeListener('message', ...)
 function removeEventListener(name, listener) {
 	if (name !== 'message' && name !== 'error') return
-	wrappedListener = this._listeners.get(listener)
+	wrappedListener = this._listeners.get(listener);
 	if (!wrappedListener) return
-	this._listeners.delete(listener)
-	this.removeListener('message', wrappedListener)
+	this._listeners.delete(listener);
+	this.removeListener('message', wrappedListener);
 }
 
 // Create shim of browser's EventSource methods and add them to EventEmitter
 function routeToEventSource(eEmitter, eSource) {
 	if (eSource) {
-		eEmitter.addEventListener = addEventListener.bind(eSource)
-		eEmitter.removeEventListener = removeEventListener.bind(eSource)
+		eEmitter.addEventListener = addEventListener.bind(eSource);
+		eEmitter.removeEventListener = removeEventListener.bind(eSource);
 	} else {
-		eEmitter.addEventListener = addEventListener
-		eEmitter.removeEventListener = removeEventListener
+		eEmitter.addEventListener = addEventListener;
+		eEmitter.removeEventListener = removeEventListener;
 	}
 }
 
 function routeToEventEmitter(eEmitter, eSource) {
 	// TODO
 	var unwrapper = e => eEmitter._emitLocally('message', e.data);
-	eSource.addEventListener('message', unwrapper)
+	eSource.addEventListener('message', unwrapper);
 	if (!eEmitter._killbacks)
-		eEmitter._killbacks = []
-	eEmitter._killbacks.push(() => eEmitter.removeEventListener('message', unwrapper))
+		eEmitter._killbacks = [];
+	eEmitter._killbacks.push(() => eEmitter.removeEventListener('message', unwrapper));
 }
 
 
@@ -209,27 +262,27 @@ function routeToEventEmitter(eEmitter, eSource) {
 
 // Browser's Worker style alias for ChildProccess.send()
 function postMessage(message) {
-	this.send(message)
+	this.send(message);
 }
 
 // Node's ChildProcess style alias for ChildProccess.send()
 function send(message) {
-	this.postMessage(message)
+	this.postMessage(message);
 }
 
 function shimBrowserIpc(eEmitter, eSource) {
 	if (eSource) {
-		eEmitter.postMessage = postMessage.bind(eSource)
+		eEmitter.postMessage = postMessage.bind(eSource);
 	} else {
-		eEmitter.postMessage = postMessage
+		eEmitter.postMessage = postMessage;
 	}
 }
 
 function shimNodeIpc(eEmitter, eSource) {
 	if (eSource) {
-		eEmitter.send = send.bind(eSource)
+		eEmitter.send = send.bind(eSource);
 	} else {
-		eEmitter.send = send
+		eEmitter.send = send;
 	}
 }
 
@@ -245,14 +298,14 @@ if (exports.isBrowser) {
 	_emitCrossThread = function _emitCrossThread(name, ...args) {
 		var transferables = undefined;
 		if (this.autoTransferArgs)
-			transferables = getTransferablesDeepTraversal(args)
-		this.postMessage({event: name, args}, transferables)
-	}
+			transferables = getTransferablesDeepTraversal(args);
+		this.postMessage({event: name, args}, transferables);
+	};
 }
 if (exports.isNode) {
 	_emitCrossThread = function _emitCrossThread(name, ...args) {
-		this.send({event: name, args})
-	}
+		this.send({event: name, args});
+	};
 }
 
 // NOTE: These are events internally used and emitted by Node's ChildProcess that we're inheriting from.
@@ -273,31 +326,31 @@ var internalProcessEvents = [
 
 // Circulates the event within EventEmitter as usual and also routes it into EventSource.
 function emit(name, ...args) {
-	this._emitLocally(name, ...args)
+	this._emitLocally(name, ...args);
 	// Ignore Node process builtin events.
 	if (internalProcessEvents.includes(name)) return
 	// Prevent emiting to the thread that's been closed and we have no access to anymore.
 	if (this.connected === false) return
-	this._emitCrossThread(name, ...args)
+	this._emitCrossThread(name, ...args);
 }
 
 function routeToThread(eeProto, eeInstance) {
 	// Vanilla EE.emit() is replaced by IPC so we need to keep the original emit()
 	// for when we're emiting messages locally and not the the other thread.
 	var _emitLocally = eeProto._emitLocally || exports.EventEmitter.prototype.emit;
-	eeProto._emitLocally = _emitLocally
-	eeProto._emitCrossThread = _emitCrossThread
-	eeProto.emit = emit
+	eeProto._emitLocally = _emitLocally;
+	eeProto._emitCrossThread = _emitCrossThread;
+	eeProto.emit = emit;
 
 	// Received 'message' from other thread and if it's custom evet, emits it as such.
 	var onMessage = data => {
 		if (data.event)
-			eeInstance._emitLocally(data.event, ...data.args)
+			eeInstance._emitLocally(data.event, ...data.args);
 		//else
 		//	eeInstance._emitLocally('message', data)
 	};
 	//eeInstance.addEventListener('message', e => onMessage(e.data))
-	eeInstance.on('message', onMessage)
+	eeInstance.on('message', onMessage);
 }
 
 
@@ -334,10 +387,10 @@ function getTransferablesDeepTraversal(arg) {
 function flatten(array) {
 	let item;
 	for (var i = 0; i < array.length; i++) {
-		item = array[i]
+		item = array[i];
 		if (!Array.isArray(item)) continue
-		array.splice(i, 1, ...item)
-		i += item.length - 1
+		array.splice(i, 1, ...item);
+		i += item.length - 1;
 	}
 	return array
 }
@@ -372,23 +425,22 @@ function ensureTransferability(arg) {
 }
 
 if (exports.isBrowser && typeof global === 'undefined')
-	self.global = self
-
+	self.global = self;
 
 if (exports.isWorker) {
 
 	if (exports.isBrowser) {
 		// Get or shim 'process' object used for ipc in child
 		if (self.process === undefined)
-			self.process = global.process = new exports.EventEmitter
+			self.process = global.process = new exports.EventEmitter;
 			//global.process = new EventEmitter
 
-		process.send = self.postMessage.bind(self)
-		process.postMessage = self.postMessage.bind(self)
+		process.send = self.postMessage.bind(self);
+		process.postMessage = self.postMessage.bind(self);
 		// process.send is Node's IPC equivalent of Browser's postMessage()
 		//shimNodeIpc(process, self)
 		// Route self.addEventListener('message') messages into EventEmitter.on('message')
-		routeToEventEmitter(process, self)
+		routeToEventEmitter(process, self);
 
 		//process.send = message => self.postMessage(message)
 		//process.emit = ...
@@ -400,15 +452,15 @@ if (exports.isWorker) {
 		// Create process.kill() and ovewrite worker's close() to notify parent thread about closing.
 		process.kill = (pid, signal) => {
 			// TODO
-		}
+		};
 		process.exit = self.close = (code = 0) => {
 			// Notify master about impending end of the thread
 			// NOTE: using postMessage({...}) instead od process.emit('exit', code) because emit would get delayed
 			//       inside EventEmitter with nextTick and wouldn't surface to parent in time. postMessage is sync.
-			self.postMessage({event: 'exit', args: [code]})
+			self.postMessage({event: 'exit', args: [code]});
 			// Kill the thread
-			setTimeout(originalClose)
-		}
+			setTimeout(originalClose);
+		};
 		// Shim Node's require() with importScript()
 		//global.require = arg => importScripts(arg)
 	}
@@ -417,36 +469,179 @@ if (exports.isWorker) {
 	if (exports.isNode) {
 		// polyfill 'self'
 		if (global.self === undefined)
-			global.self = global
+			global.self = global;
 
-		self.postMessage = process.send.bind(process)
+		self.postMessage = process.send.bind(process);
 		// Shim browser's IPC self.postMessage
 		//shimBrowserIpc(self, process)
 		// Route EventEmitter.on('message') events into self.addEventListener('message')
-		routeToEventSource(self, process)
+		routeToEventSource(self, process);
 
 		//self.postMessage = message => process.send(message)
 		//self.addEventListener = addEventListener.bind(process)
 		//self.removeEventListener = removeEventListener.bind(process)
 
 		// Shim browser's close method to kill Worker thread
-		self.close = (code = 0) => process.exit(code)
+		self.close = (code = 0) => process.exit(code);
 		// Shim browser's importScript() with require()
-		self.importScripts = (...args) => args.forEach(require)
+		self.importScripts = (...args) => args.forEach(require);
 	}
 
 	// Establish inter-process EventEmitter so we can easily just .emit('name', arg) without
 	// additional bootstrapping and messing with postMessage/send on one side, and addEventListener/on
 	// on the other. Events in the parent will be emitted in the MultiPlatformWorker instance of this worker.
 	// Just like emitting event into that instance will make it appear here in the worker as well.
-	routeToThread(process, process)
+	routeToThread(process, process);
 
 	// Now that we've established inter-process EventEmitter...
 	// Emit 'online' event to the parent, similar to what Node cluster module does.
 	// Note: Only 'cluster' module does it, so 'child_process' and its ChildProcess we're using here
 	//       still needs us to manually fire the 'online' event
-	process.emit('online')
+	process.emit('online');
 
+}
+
+if (exports.isWorker) {
+	if (exports.isBrowser) {
+		console.log('polyfilling');
+		if (global.exports === undefined)
+			global.exports = {};
+		if (global.module === undefined)
+			global.module = {
+				exports: global.exports
+			};
+		var defaultContext = global.exports;
+		console.log('global.exports', global.exports);
+	} else {
+		var defaultContext = {};
+	}
+	//process.setContext = setContext
+	//process.register = register
+}
+
+// Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
+// All defined functions and variables (that are not inside another block scope) are therefore also globals
+// that we can acces in 'self'
+if (exports.isBrowser)
+	var fallbackContext = self;
+
+// Node module code is wrapped and has custom inaccessible context. Scope 'this' points to an useless empty object.
+// By an off chance that user puts their methods in global we start with that and offer to use setScope(exports).
+if (exports.isNode)
+	var fallbackContext = global;
+
+var contexts = [fallbackContext, defaultContext];
+
+function setContext(customContext) {
+	contexts.push(customContext);
+}
+
+function register(value, name = value.name) {
+	defaultContext[name] = value;
+}
+
+function resolvePath(path$$1) {
+	var result;
+	var context;
+	var ci = contexts.length;
+	if (path$$1.includes('.')) {
+		var sections = path$$1.split('.').reverse();
+		var section;
+		while (!result && --ci) {
+			context = contexts[ci];
+			let si = sections.length;
+			while (section = sections[--si])
+				context = context[section];
+			result = context;
+		}
+		return result
+	} else {
+		while (!result && --ci) {
+			result = contexts[ci][path$$1];
+		}
+		return result
+	}
+}
+
+if (exports.isWorker) {
+
+	// Start listening from communication from master and handle tasks
+	process.on('task-start', executeTask);
+
+	async function executeTask(task) {
+		var {id, path: path$$1, args} = task;
+		var theMethod = resolvePath(path$$1);
+		var status = false;
+		var payload;
+		if (!theMethod) {
+			let {name, message, stack} = new Error(`${path$$1} is not a function (inside a worker)`);
+			payload = {name, message, stack};
+		} else try {
+			status = true;
+			payload = await theMethod(...args);
+		} catch(err) {
+			let {name, message, stack} = err;
+			name = name.replace(/theMethod/g, path$$1);
+			message = message.replace(/theMethod/g, path$$1);
+			payload = {name, message, stack};
+		}
+		process.emit('task-end', {id, status, payload});
+	}
+
+}
+
+if (exports.isNode && exports.isWorker && launchedAsWrapper) {
+	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
+	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
+	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
+	var userScriptRelPath = process.argv[1];
+	//userScriptRelPath = './test/' + userScriptRelPath
+	//userScriptRelPath = './' + userScriptRelPath
+	userScriptRelPath = sanitizePath$1(userScriptRelPath);
+	try {
+		// Try to load the path as is (it could be a whole module)
+		var ctx = require(userScriptRelPath);
+	} catch (e) {
+		// If the loading fails, add ./ and try again
+		userScriptRelPath = relativizie(userScriptRelPath);
+		var ctx = require(userScriptRelPath);
+	}
+	// Handle transpiler/bundle ES module format using 'default' key.
+	if (ctx.hasOwnProperty('default'))
+		ctx = ctx['default'];
+	// And finally set the export context of the module as fachmans lookup input.
+	setContext(ctx);
+
+	function sanitizePath$1(string) {
+		return string.replace(/\\/g, '/')
+	}
+
+	function relativizie(string) {
+		if (!string.startsWith('./') && !string.startsWith('../'))
+			return './' + string
+	}
+}
+
+
+// Browser is capable of creating worker code dynamically in browser by turnin the code into blob and then to url.
+
+function createBlobUrlWrapper(workerPath, options) {
+	if (options.type === 'module' && supportsWorkerModules) {
+		var code = `
+			import fachman from '${fachmanRelPath}'
+			import * as scope from '${workerPath}'
+			fachman.setScope(scope)`;
+	} else {
+		var code = `
+			importScripts('${fachmanRelPath}', '${workerPath}')
+			self.fachman.setScope(scope)`;
+	}
+	return createBlobUrl(code)
+}
+
+function createBlobUrl(string) {
+	var blob = new Blob([string], {type: 'application/javascript'});
+	return URL.createObjectURL(blob)
 }
 
 var BrowserWorker;
@@ -458,45 +653,43 @@ if (exports.isMaster && exports.isBrowser) {
 	BrowserWorker = class BrowserWorker extends self.Worker {
 
 		constructor(workerPath, options = {}) {
-			/*if (options.type === 'module' && supportsWorkerModules && options.autoWrapWorker) {
-				console.log('FIXME')
-				var code = `
-					import fachman from '${fachmanPath}'
-					import * as scope from '${workerPath}'
-					fachman.setScope(scope)`
-				code = createBlobUrl(code)
-				super(code, {type: 'module'})
-			} else {*/
+			console.log('BrowserWorker constructor', options.autoWrapWorker);
+			if (options.autoWrapWorker) {
+				var code = createBlobUrlWrapper(workerPath, options);
+				console.log(code);
+				super(code, options);
+			} else {
 				// Call constructor of Worker class to extends with its behavior
-				super(workerPath, options)
-			//}
+				super(workerPath, options);
+			}
+			this.addEventListener('error', err => console.error(err));
 			// Call constructor of EventEmitter class to extends with its behavior
-			exports.EventEmitter.call(this)
+			exports.EventEmitter.call(this);
 			// Following properties are here to mimic Node's ChildProcess.
 			// Thread starts off without exit codes that will be assigned once it exits.
-			this.signalCode = null
-			this.exitCode = null
-			this.killed = false
+			this.signalCode = null;
+			this.exitCode = null;
+			this.killed = false;
 			// Listening to 'exit' event rather than assigning it in terminate() because the thread could end on its own with custom code.
 			this.on('exit', (code, signal) => {
-				this.exitCode = code
-				this.signalCode = signal
-			})
+				this.exitCode = code;
+				this.signalCode = signal;
+			});
 			// Worker is launched synchronously (or the messages wait at least) so we can just assign it like this.
-			this.connected = true
+			this.connected = true;
 			// Path to the file
-			this.spawnfile = workerPath
+			this.spawnfile = workerPath;
 
 
 			// Array of callbacks to call, to remove listeners and prevent memory leaks, when the worker gets destroyed. 
-			this._killbacks = []
+			this._killbacks = [];
 			// Route self.addEventListener('message') messages into EventEmitter.on('message')
-			routeToEventEmitter(this, this)
+			routeToEventEmitter(this, this);
 		}
 
 		// Shim for Node's ChildProcess.kill()
 		kill(signal) {
-			this.terminate(signal)
+			this.terminate(signal);
 		}
 
 		// Kills worker thread and cancels all ongoing tasks
@@ -508,38 +701,38 @@ if (exports.isMaster && exports.isBrowser) {
 				//       if that's what node does - INVESTIGATE
 			}
 			// Call native terminate() to kill the process
-			super.terminate()
+			super.terminate();
 			// Browser mercilessly kills the worker thread on sight.
-			this.killed = true
+			this.killed = true;
 			// Set connected to false and emit 'disconnect' to stay in parity with Node's ChildProcess.
-			this.disconnect()
+			this.disconnect();
 			// Exit code is null instead of 0 because the process didn't end/exit itself but was closed externally.
-			this._emitLocally('exit', null, signal)
-			this._emitLocally('close', null, signal)
+			this._emitLocally('exit', null, signal);
+			this._emitLocally('close', null, signal);
 		}
 
 		// Rough approximation of Node's ChildProcess.disconnect().
 		// NOTE: it does not do fancy handling of pending messages like Node does.
 		disconnect() {
-			this.connected = false
+			this.connected = false;
 			// Emitting event 'disconnect', 'exit' and finally 'close' to make it similar to Node's childproc & cluster
-			this._emitLocally('disconnect')
+			this._emitLocally('disconnect');
 		}
 
-	}
+	};
 
 	let WorkerProto = BrowserWorker.prototype;
 	let EeProto = exports.EventEmitter.prototype;
 
 	// Shim for Node's ChildProcess.send(), an alias for Worker.postMessage()
-	shimNodeIpc(WorkerProto)
+	shimNodeIpc(WorkerProto);
 
 	// Extends MultiPlatformWoker's proto with EventEmitter methods manualy since its already
 	// inheriting from Worker class and classes can have only one direct parent.
 	let descriptors = Object.getOwnPropertyDescriptors(exports.EventEmitter.prototype);
 	Object.keys(descriptors)
 		.filter(name => name !== 'constructor')
-		.forEach(key => WorkerProto[key] = EeProto[key])
+		.forEach(key => WorkerProto[key] = EeProto[key]);
 
 }
 
@@ -551,10 +744,6 @@ function stringifyFunction(fn) {
 	return createBlobUrl(string)
 }
 */
-function createBlobUrl(string) {
-	var blob = new Blob([string], {type: 'application/javascript'});
-	return URL.createObjectURL(blob)
-}
 
 var NodeWorker;
 
@@ -572,7 +761,7 @@ if (exports.isMaster && exports.isNode) {
 		// child_process.spawn(process.execPath, ['thefile.js', my', 'arg'], {stdio: [1,2,3,'ipc']})
 		constructor(nodePath, args = [], options = {}) {
 			// ChildProcess constructor doesn't take any arugments. But later on it's initialized with .spawn() method.
-			super()
+			super();
 			if (options.autoWrapWorker !== false) {
 				// If the user script file has .mjs ending (singaling it's written as ES Module) and Node has native support
 				// then import unbundled ES Module version of fachman.
@@ -583,21 +772,21 @@ if (exports.isMaster && exports.isNode) {
 				var wrapperPath = path.join(fachmanDirPath, wrapperName);
 				// User's (NodeWorker in this case) defines his script to launch as a first argument.
 				var userScriptRelPath = args.shift();
-				userScriptRelPath = path.relative(fachmanDirPath, userScriptRelPath)
+				userScriptRelPath = path.relative(fachmanDirPath, userScriptRelPath);
 				// Prepend args with path to user script and our wrapper that will run fachman and the script.
-				args = [wrapperPath, userScriptRelPath, ...args]
+				args = [wrapperPath, userScriptRelPath, ...args];
 			}
-			args = [nodePath, ...args]
+			args = [nodePath, ...args];
 			var file = nodePath;
 			// Create the basics needed for creating a pocess. It basically does all that child_process.spawn() does internally.
 			var envPairs = [];
 			var env = options.env || process.env;
 			for (var key in env)
-				envPairs.push(key + '=' + env[key])
+				envPairs.push(key + '=' + env[key]);
 			var params = Object.assign({file, args, envPairs}, options);
-			params.windowsVerbatimArguments = !!params.windowsVerbatimArguments
-			params.detached = !!params.detached
-			this.spawn(params)
+			params.windowsVerbatimArguments = !!params.windowsVerbatimArguments;
+			params.detached = !!params.detached;
+			this.spawn(params);
 		}
 
 	}
@@ -609,7 +798,7 @@ if (exports.isMaster && exports.isNode) {
 	NodeWorker = class NodeWorker extends SpawnedChildProcess {
 
 		constructor(workerPath, options = {}) {
-			options.args = options.args || []
+			options.args = options.args || [];
 			// .spawn() arguments must include script file as a first item
 			// and then we're adding custom argument to ask for in the worker to determine
 			// if the process is master or worker.
@@ -619,9 +808,9 @@ if (exports.isMaster && exports.isNode) {
 			var stdio = [0, 1, 2, 'ipc'];
 			var channelCount = options.streams || 0;
 			while (channelCount)
-				stdio.push('pipe')
+				stdio.push('pipe');
 			// Spawn the process by extending parent class which does the same as cp.spawn()
-			super(process.execPath, args, {stdio})
+			super(process.execPath, args, {stdio});
 			//var child = cp.spawn(process.execPath, args, {stdio})
 
 			/*
@@ -638,32 +827,32 @@ if (exports.isMaster && exports.isNode) {
 
 			this.on('error', err => {
 				// Tigger Browser's Worker style API
-				if (this.onerror) this.onerror(err)
-			})
+				if (this.onerror) this.onerror(err);
+			});
 
 			this.on('message', data => {
 				// Tigger Browser's Worker style API
-				if (this.onmessage) this.onmessage({data})
-			})
+				if (this.onmessage) this.onmessage({data});
+			});
 
 			// Array of callbacks to call, to remove listeners and prevent memory leaks, when the worker gets destroyed. 
-			this._killbacks = []
+			this._killbacks = [];
 		}
 
 		// Browser's Worker style alias for ChildProccess.kill()
 		terminate() {
 			//this.kill(0)
-			this.kill()
+			this.kill();
 			// TODO: investigate if this implementation is enough
 			//this.kill('SIGINT')
 			//this.kill('SIGTERM')
 		}
 
-	}
+	};
 
-	shimBrowserIpc(NodeWorker.prototype)
+	shimBrowserIpc(NodeWorker.prototype);
 	// Create shim of browser's EventSource methods and add them to EventEmitter
-	routeToEventSource(NodeWorker.prototype)
+	routeToEventSource(NodeWorker.prototype);
 	//NodeWorker.prototype.addEventListener = addEventListener
 	//NodeWorker.prototype.removeEventListener = removeEventListener
 	//NodeWorker.prototype.postMessage = postMessage
@@ -680,48 +869,48 @@ if (exports.isMaster) {
 	exports.MultiPlatformWorker = class MultiPlatformWorker extends Parent {
 
 		constructor(workerPath, options) {
-			super(workerPath, options)
+			super(workerPath, options);
 			// Node does not support transferables
 			if (exports.isNode)
-				this.autoTransferArgs = false
-			routeToThread(this, this)
+				this.autoTransferArgs = false;
+			routeToThread(this, this);
 		}
 
 		// Kill the worker process/thread and cleanup after that
 		terminate() {
 			try {
-				super.terminate()
+				super.terminate();
 			} catch(e) {}
 			var timeout = setTimeout(() => this._destroy(), 3000);
 			this.once('close', () => {
-				clearTimeout(timeout)
-				this._destroy()
-			})
+				clearTimeout(timeout);
+				this._destroy();
+			});
 		}
 
 		// Destroy all listeners immediately
 		destroy() {
 			try {
-				super.terminate()
+				super.terminate();
 			} catch(e) {}
 			// Destroy all listeners immediately
-			this._destroy()
+			this._destroy();
 		}
 
 		// Remove all active EventEmitter listeners to prevent memory leaks.
 		_destroy() {
-			this.removeAllListeners()
-			this._killbacks.forEach(callback => callback())
+			this.removeAllListeners();
+			this._killbacks.forEach(callback => callback());
 			// TODO: remove all event listeners on both EventSource
 			// TODO: hook this on 'exit' event. Note: be careful with exit codes and autorestart
 		}
 
-	}
+	};
 
 } else {
 
 	// Export noop to prevent breakage in worker environment, from where creating another worker doesn't make sense
-	exports.MultiPlatformWorker = class {}
+	exports.MultiPlatformWorker = class {};
 
 }
 
@@ -752,6 +941,7 @@ function createNestedProxy(target, onCall, path$$1 = []) {
 	return new Proxy(target, proxyProto)
 }
 
+// Default setting is optimized for high intensity tasks and load ballancing
 var defaultOptions = {
 	// By default each worker is executing only one task at a time. If more tasks are invoked
 	// than there are available worker threads, the new tasks will be queued and waiting for
@@ -774,11 +964,14 @@ var defaultOptions = {
 	// TODO - wrapping script in node by executing fachman and requiring it from there
 	// TODO - constructing custom blobl url in browser (es modules only, not available yet)
 	autoWrapWorker: true,
+	// Can be one of:
+	// - 'script' launches as bare script with 'importScripts' and 'require' functions.
+	// - 'module' launches as ES Module with 'import' syntax enabled.
+	// - undefined by default results in autodetection based on '.mjs' file extension.
+	type: undefined
 };
 
-// Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)
-// to the actual worker code, executes it there and waits for the woker to respond with result.
-class ProxyWorker$1 extends exports.MultiPlatformWorker {
+class ProxyWorker extends exports.MultiPlatformWorker {
 
 	get runningTasks() {
 		return this._runningTasks || 0
@@ -805,7 +998,7 @@ class ProxyWorker$1 extends exports.MultiPlatformWorker {
 		//	workerPath = stringifyFunction(workerPath)
 		//else if (options.codeBlock === true || options.codeBlock === undefined && workerPath.length > 20)
 		//	workerPath = createBlobUrl(workerPath)
-		// We will open user worker script which will load this library.
+		options = Object.assign({}, defaultOptions, options);
 		if (options.type === undefined) {
 			// Only works in browser for now
 			if (workerPath.endsWith('.mjs'))
@@ -813,10 +1006,11 @@ class ProxyWorker$1 extends exports.MultiPlatformWorker {
 			else
 				(options.args = options.args || []).push('--experimental-modules');
 		}
+		// We will open user worker script which will load this library.
 		super(workerPath, options);
 		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
 		// Apply options to this instance
-		Object.assign(this, defaultOptions);
+		Object.assign(this, options);
 		// TODO: Apply user's options
 		this._setupLifecycle();
 		this._setupTasks();
@@ -1073,120 +1267,18 @@ class Cluster extends exports.EventEmitter {
 
 }
 
-var defaultContext = {};
+//import './worker-thread.mjs'
 
-// Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
-// All defined functions and variables (that are not inside another block scope) are therefore also globals
-// that we can acces in 'self'
-if (exports.isBrowser)
-	var fallbackContext = self;
 
-// Node module code is wrapped and has custom inaccessible context. Scope 'this' points to an useless empty object.
-// By an off chance that user puts their methods in global we start with that and offer to use setScope(exports).
-if (exports.isNode)
-	var fallbackContext = global;
-
-var contexts = [fallbackContext, defaultContext];
-
-function setContext(customContext) {
-	contexts.push(customContext);
-}
-
-function register(value, name = value.name) {
-	defaultContext[name] = value;
-}
-
-function resolvePath(path$$1) {
-	var result;
-	var context;
-	var ci = contexts.length;
-	if (path$$1.includes('.')) {
-		var sections = path$$1.split('.').reverse();
-		var section;
-		while (!result && --ci) {
-			context = contexts[ci]
-			let si = sections.length;
-			while (section = sections[--si])
-				context = context[section]
-			result = context;
-		}
-		return result
-	} else {
-		while (!result && --ci) {
-			result = contexts[ci][path$$1];
-		}
-		return result
-	}
-}
-
-if (exports.isWorker) {
-
-	// Start listening from communication from master and handle tasks
-	process.on('task-start', executeTask)
-
-	async function executeTask(task) {
-		var {id, path: path$$1, args} = task;
-		var theMethod = walkPath(path$$1);
-		var status = false;
-		var payload;
-		if (!theMethod) {
-			let {name, message, stack} = new Error(`${path$$1} is not a function (inside a worker)`);
-			payload = {name, message, stack}
-		} else try {
-			status = true
-			payload = await theMethod(...args)
-		} catch(err) {
-			let {name, message, stack} = err;
-			name = name.replace(/theMethod/g, path$$1)
-			message = message.replace(/theMethod/g, path$$1)
-			payload = {name, message, stack}
-		}
-		process.emit('task-end', {id, status, payload})
-	}
-
-}
-
-if (exports.isNode && exports.isWorker && launchedAsWrapper) {
-	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
-	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
-	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
-	var userScriptRelPath = process.argv[1];
-	//userScriptRelPath = './test/' + userScriptRelPath
-	//userScriptRelPath = './' + userScriptRelPath
-	userScriptRelPath = sanitizePath(userScriptRelPath)
-	try {
-		// Try to load the path as is (it could be a whole module)
-		var ctx = require(userScriptRelPath);
-	} catch (e) {
-		// If the loading fails, add ./ and try again
-		userScriptRelPath = relativizie(userScriptRelPath)
-		var ctx = require(userScriptRelPath);
-	}
-	// Handle transpiler/bundle ES module format using 'default' key.
-	if (ctx.hasOwnProperty('default'))
-		ctx = ctx['default']
-	// And finally set the export context of the module as fachmans lookup input.
-	setContext(ctx)
-}
-
-function sanitizePath(string) {
-	return string.replace(/\\/g, '/')
-}
-
-function relativizie(string) {
-	if (!string.startsWith('./') && !string.startsWith('../'))
-		return './' + string
-}
 
 // TODO: handle SIGTERM and SIGINT in Node
 
+exports.ProxyWorker = ProxyWorker;
+exports.createTask = createTask;
+exports.Cluster = Cluster;
 exports.setContext = setContext;
 exports.register = register;
 exports.resolvePath = resolvePath;
-exports.defaultOptions = defaultOptions;
-exports.ProxyWorker = ProxyWorker$1;
-exports.createTask = createTask;
-exports.Cluster = Cluster;
 
 Object.defineProperty(exports, '__esModule', { value: true });
 

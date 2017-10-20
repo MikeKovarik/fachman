@@ -7,10 +7,10 @@ import {routeToThread} from './messaging.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 
 
+
 // polyfill 'global'
 if (isBrowser && typeof global === 'undefined')
 	self.global = self
-
 
 if (isWorker) {
 

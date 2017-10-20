@@ -1,7 +1,23 @@
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 
 
-var defaultContext = {}
+if (isWorker) {
+	if (isBrowser) {
+		console.log('polyfilling')
+		if (global.exports === undefined)
+			global.exports = {}
+		if (global.module === undefined)
+			global.module = {
+				exports: global.exports
+			}
+		var defaultContext = global.exports
+		console.log('global.exports', global.exports)
+	} else {
+		var defaultContext = {}
+	}
+	//process.setContext = setContext
+	//process.register = register
+}
 
 // Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
 // All defined functions and variables (that are not inside another block scope) are therefore also globals
@@ -54,7 +70,7 @@ if (isWorker) {
 
 	async function executeTask(task) {
 		var {id, path, args} = task
-		var theMethod = walkPath(path)
+		var theMethod = resolvePath(path)
 		var status = false
 		var payload
 		if (!theMethod) {

@@ -1,6 +1,7 @@
 import {isMaster, isBrowser, supportsWorkerModules} from './platform.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 import {shimNodeIpc, routeToEventEmitter} from './messaging.mjs'
+import {createBlobUrlWrapper} from './construct-wrapper.mjs'
 
 
 export var BrowserWorker
@@ -12,18 +13,16 @@ if (isMaster && isBrowser) {
 	BrowserWorker = class BrowserWorker extends self.Worker {
 
 		constructor(workerPath, options = {}) {
-			/*if (options.type === 'module' && supportsWorkerModules && options.autoWrapWorker) {
-				console.log('FIXME')
-				var code = `
-					import fachman from '${fachmanPath}'
-					import * as scope from '${workerPath}'
-					fachman.setScope(scope)`
-				code = createBlobUrl(code)
-				super(code, {type: 'module'})
-			} else {*/
+			console.log('BrowserWorker constructor', options.autoWrapWorker)
+			if (options.autoWrapWorker) {
+				var code = createBlobUrlWrapper(workerPath, options)
+				console.log(code)
+				super(code, options)
+			} else {
 				// Call constructor of Worker class to extends with its behavior
 				super(workerPath, options)
-			//}
+			}
+			this.addEventListener('error', err => console.error(err))
 			// Call constructor of EventEmitter class to extends with its behavior
 			EventEmitter.call(this)
 			// Following properties are here to mimic Node's ChildProcess.
@@ -105,7 +104,3 @@ function stringifyFunction(fn) {
 	return createBlobUrl(string)
 }
 */
-function createBlobUrl(string) {
-	var blob = new Blob([string], {type: 'application/javascript'})
-	return URL.createObjectURL(blob)
-}

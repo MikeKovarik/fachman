@@ -1,3 +1,6 @@
+import path from './shim-path.mjs'
+
+
 // is true if it's the main UI thread in browser, or main thread in Node
 export var isMaster = false
 
@@ -39,20 +42,43 @@ if (isNode) {
 }
 
 export var fachmanPath
+export var fachmanRelPath
 export var fachmanDirPath
 
-export function setPath(newPath) {
-	// Sanitize the path.
-	fachmanPath = newPath.replace(/\\/g, '/')
-	// Keep only the directory path, ignore the file.
-	fachmanDirPath = fachmanPath.substr(0, fachmanPath.lastIndexOf('/'))
+
+function trimDirPath(path) {
+	return path.substr(0, path.lastIndexOf('/'))
+}
+function sanitizePath(path) {
+	return path.replace(/\\/g, '/')
+}
+
+function getUserScriptCwd() {
+	if (typeof process === 'object' && process.cwd)
+		return process.cwd()
+	else
+		return trimDirPath(location.href)
+}
+
+function getModuleIndexPath() {
+	if (typeof __filename === 'undefined')
+		return document.currentScript.src
+	// TODO: handle unbundled ESM version where __filename === 'src/platform.mjs' instead of 'index.mjs/js'
+	//else if ()
+	//	return __filename
+	else
+		return __filename
 }
 
 if (isMaster) {
-	if (isBrowser)
-		setPath(document.currentScript.src)
-	else
-		setPath(__filename)
+	// Sanitize the path.
+	fachmanPath = sanitizePath(getModuleIndexPath())
+	// Get current location of the app that imports fachman
+	var cwd = sanitizePath(getUserScriptCwd() + '/')
+	//
+	fachmanRelPath = path.relative(cwd, fachmanPath)
+	// Keep only the directory path, ignore the file.
+	fachmanDirPath = trimDirPath(fachmanPath)
 }
 
 
@@ -60,7 +86,7 @@ if (isMaster) {
 export var supportsNativeModules = typeof module === 'undefined'
 								&& typeof exports === 'undefined'
 								&& typeof require === 'undefined'
-								&& typeof __filename === 'undefined'
+								//&& typeof __filename === 'undefined'
 
 // Modules support in workers is a ways off for now.
 export var supportsWorkerModules = false

@@ -1,32 +1,9 @@
 import {MultiPlatformWorker} from './MultiPlatformWorker.mjs'
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {createNestedProxy} from './nestedProxy.mjs'
+import {defaultOptions} from './defaultOptions.mjs'
 
 
-// Default setting is optimized for high intensity tasks and load ballancing
-export var defaultOptions = {
-	// By default each worker is executing only one task at a time. If more tasks are invoked
-	// than there are available worker threads, the new tasks will be queued and waiting for
-	// some preceeding task to finish, resulting in maximum utilization (load ballancing), because
-	// the task will be executed on the next free worker. It's ideal for cpu intensive tasks,
-	// but won't work well with not so intensive tasks that maybe incorporate timers, or wait
-	// for something. In such cache the worker is waiting for task that isn't doing much, while blocking
-	// queued tasks which could be running in parallel.
-	canEnqueueTasks: false,
-	// Workers are being loaded synchronously with the UI thread. This leads to noticeable
-	// slowdown if large ammount of workers are started immediately alongside the main UI thread.
-	// Test: 4 core i7 with hyperthreding, resulting in 8 workers, causes about 2 second slowdown.
-	startupDelay: 100,
-	// Spacing between creation of each worker.
-	workerStartupDelay: 0,
-	// Browser only
-	// Each postMessage (both raw or through any other higher level API) data is crawled and searched for
-	// arrays, buffers and arraybuffers that can be have their memory transfered from one thread to another.
-	autoTransferArgs: true,
-	// TODO - wrapping script in node by executing fachman and requiring it from there
-	// TODO - constructing custom blobl url in browser (es modules only, not available yet)
-	autoWrapWorker: true,
-}
 
 // Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)
 // to the actual worker code, executes it there and waits for the woker to respond with result.
@@ -57,7 +34,7 @@ export class ProxyWorker extends MultiPlatformWorker {
 		//	workerPath = stringifyFunction(workerPath)
 		//else if (options.codeBlock === true || options.codeBlock === undefined && workerPath.length > 20)
 		//	workerPath = createBlobUrl(workerPath)
-		// We will open user worker script which will load this library.
+		options = Object.assign({}, defaultOptions, options)
 		if (options.type === undefined) {
 			// Only works in browser for now
 			if (workerPath.endsWith('.mjs'))
@@ -65,10 +42,11 @@ export class ProxyWorker extends MultiPlatformWorker {
 			else
 				(options.args = options.args || []).push('--experimental-modules')
 		}
+		// We will open user worker script which will load this library.
 		super(workerPath, options)
 		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
 		// Apply options to this instance
-		Object.assign(this, defaultOptions)
+		Object.assign(this, options)
 		// TODO: Apply user's options
 		this._setupLifecycle()
 		this._setupTasks()

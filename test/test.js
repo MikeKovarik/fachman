@@ -250,12 +250,12 @@ describe('ProxyWorker', () => {
 			assert.equal(result, 41)
 		})
 
-		it('autowrap', async () => {
+		/*it('autowrap', async () => {
 			assert.equal(true, false)
 		})
 		it('autowrap false', async () => {
 			assert.equal(true, false)
-		})
+		})*/
 
 		describe('manual setContext()', () => {
 

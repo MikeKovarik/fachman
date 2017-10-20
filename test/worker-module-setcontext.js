@@ -1,11 +1,18 @@
-if (typeof require === 'function')
+if (typeof require === 'function') {
+	console.log('KURVA REQUIRE')
 	var fachman = require('../index.js')
+	console.log('fachman', fachman)
+}
 else
 	importScripts('../index.js')
 
 
+console.log('typeof fachman', typeof fachman)
+console.log('typeof fachman.toMePoser', typeof fachman.toMePoser)
+console.log('typeof fachman.setContext', typeof fachman.setContext)
+
 var customContext = {}
-fachman.setContext(customContext)
+//fachman.setContext(customContext)
 
 customContext.echo = function(arg) {
 	return arg
@@ -38,6 +45,6 @@ customContext.compute = async function(a, b) {
 
 
 process.on('typeof', path => {
-	var found = fachman.walkPath(path)
+	var found = fachman.resolvePath(path)
 	process.emit('typeis', typeof found)
 })

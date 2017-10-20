@@ -3,7 +3,6 @@ import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 
 if (isWorker) {
 	if (isBrowser) {
-		console.log('polyfilling')
 		if (global.exports === undefined)
 			global.exports = {}
 		if (global.module === undefined)
@@ -11,7 +10,6 @@ if (isWorker) {
 				exports: global.exports
 			}
 		var defaultContext = global.exports
-		console.log('global.exports', global.exports)
 	} else {
 		var defaultContext = {}
 	}
@@ -87,5 +85,13 @@ if (isWorker) {
 		}
 		process.emit('task-end', {id, status, payload})
 	}
+
+	// Now that we've established inter-process EventEmitter...
+	// Emit 'online' event to the parent, similar to what Node cluster module does.
+	// Note: Only 'cluster' module does it, so 'child_process' and its ChildProcess we're using here
+	//       still needs us to manually fire the 'online' event
+	// Note: In some cases it is critical to not emit (and subsequently using postMessage) immediately during
+	//       setup phase. It will silently throw in wrapped worker. We need to postpone 'online' event until end of event loop.
+	setTimeout(() => process.emit('online'))
 
 }

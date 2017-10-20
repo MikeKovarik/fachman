@@ -1,18 +1,11 @@
-if (typeof require === 'function') {
-	console.log('KURVA REQUIRE')
+if (typeof require === 'function')
 	var fachman = require('../index.js')
-	console.log('fachman', fachman)
-}
 else
 	importScripts('../index.js')
 
 
-console.log('typeof fachman', typeof fachman)
-console.log('typeof fachman.toMePoser', typeof fachman.toMePoser)
-console.log('typeof fachman.setContext', typeof fachman.setContext)
-
 var customContext = {}
-//fachman.setContext(customContext)
+fachman.setContext(customContext)
 
 customContext.echo = function(arg) {
 	return arg

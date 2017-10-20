@@ -1,5 +1,4 @@
 import {isWorker, isNode, isBrowser, launchedAsWrapper} from './platform.mjs'
-import {fachmanRelPath} from './platform.mjs'
 import {setContext} from './worker-thread.mjs'
 
 
@@ -36,20 +35,25 @@ if (isNode && isWorker && launchedAsWrapper) {
 }
 
 
-// Browser is capable of creating worker code dynamically in browser by turnin the code into blob and then to url.
+// Browser is capable of creating worker code dynamically in browser by turning the code into blob and then to url.
 
-export function createBlobUrlWrapper(workerPath, options) {
-	if (options.type === 'module' && supportsWorkerModules) {
+var blobUrl
+
+export function getBlobUrl(esm = false) {
+	// TODO: ES Module support when it's available in browsers
+	if (!blobUrl) {
+		// Note: Relative URLs can't be used in blob worker.
+		//       Absolute paths of scripts to import has to be sent through message.
 		var code = `
-			import fachman from '${fachmanRelPath}'
-			import * as scope from '${workerPath}'
-			fachman.setScope(scope)`
-	} else {
-		var code = `
-			importScripts('${fachmanRelPath}', '${workerPath}')
-			self.fachman.setScope(scope)`
+			self.onmessage = e => {
+				var {fachmanPath, workerPath} = e.data
+				self.onmessage = undefined
+				importScripts(fachmanPath, workerPath)
+			}
+			`
+		blobUrl = createBlobUrl(code)
 	}
-	return createBlobUrl(code)
+	return blobUrl
 }
 
 function createBlobUrl(string) {

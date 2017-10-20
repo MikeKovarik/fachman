@@ -1,4 +1,4 @@
-import path from './shim-path.mjs'
+import path, {getCwd} from './shim-path.mjs'
 
 
 // is true if it's the main UI thread in browser, or main thread in Node
@@ -20,13 +20,17 @@ if (typeof process === 'object' && process.versions.node && process.argv.length)
 	isWorker = !isMaster
 }
 
+
 if (typeof navigator === 'object') {
 	isBrowser = true
-	if (typeof importScripts === 'function')
+	if (typeof importScripts === 'function') {
 		isWorker = true
-	else if (typeof document === 'object')
+	}
+	else if (typeof document === 'object') {
 		isMaster = true
+	}
 }
+
 
 // Only available in node (browser's alternative is constructing blob url wrapper)
 export var launchedAsWrapper = false
@@ -42,22 +46,10 @@ if (isNode) {
 }
 
 export var fachmanPath
-export var fachmanRelPath
-export var fachmanDirPath
 
 
-function trimDirPath(path) {
-	return path.substr(0, path.lastIndexOf('/'))
-}
 function sanitizePath(path) {
 	return path.replace(/\\/g, '/')
-}
-
-function getUserScriptCwd() {
-	if (typeof process === 'object' && process.cwd)
-		return process.cwd()
-	else
-		return trimDirPath(location.href)
 }
 
 function getModuleIndexPath() {
@@ -71,16 +63,11 @@ function getModuleIndexPath() {
 }
 
 if (isMaster) {
-	// Sanitize the path.
+	// Absolute path to the fachman script file. Sanitize the path.
 	fachmanPath = sanitizePath(getModuleIndexPath())
 	// Get current location of the app that imports fachman
-	var cwd = sanitizePath(getUserScriptCwd() + '/')
-	//
-	fachmanRelPath = path.relative(cwd, fachmanPath)
-	// Keep only the directory path, ignore the file.
-	fachmanDirPath = trimDirPath(fachmanPath)
+	var cwd = sanitizePath(getCwd() + '/')
 }
-
 
 // https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables
 export var supportsNativeModules = typeof module === 'undefined'

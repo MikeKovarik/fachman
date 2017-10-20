@@ -1,7 +1,9 @@
 import {isMaster, isBrowser, supportsWorkerModules} from './platform.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 import {shimNodeIpc, routeToEventEmitter} from './messaging.mjs'
-import {createBlobUrlWrapper} from './construct-wrapper.mjs'
+import {getBlobUrl} from './construct-wrapper.mjs'
+import {fachmanPath} from './platform.mjs'
+import path, {getCwd} from './shim-path.mjs'
 
 
 export var BrowserWorker
@@ -13,11 +15,18 @@ if (isMaster && isBrowser) {
 	BrowserWorker = class BrowserWorker extends self.Worker {
 
 		constructor(workerPath, options = {}) {
-			console.log('BrowserWorker constructor', options.autoWrapWorker)
 			if (options.autoWrapWorker) {
-				var code = createBlobUrlWrapper(workerPath, options)
-				console.log(code)
+				// Get or create standard custom wrapper for given worker.
+				// The code will import fachman and then the desired worker. 
+				var code = getBlobUrl(options.type === 'module')
 				super(code, options)
+				// Convert worker path into absolute path
+				if (!workerPath.includes('://'))
+					workerPath = path.join(getCwd(), workerPath)
+				// Relative URLs can't be used in blob workers because those have 'blob:' prefix.
+				// The blob wrapper we made earlier listens for message with fachman and actual worker path.
+				// Once that's received, the worker imports scripts and self-destructs the message and listener.
+				this.postMessage({fachmanPath, workerPath})
 			} else {
 				// Call constructor of Worker class to extends with its behavior
 				super(workerPath, options)

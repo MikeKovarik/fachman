@@ -78,10 +78,4 @@ if (isWorker) {
 	// Just like emitting event into that instance will make it appear here in the worker as well.
 	routeToThread(process, process)
 
-	// Now that we've established inter-process EventEmitter...
-	// Emit 'online' event to the parent, similar to what Node cluster module does.
-	// Note: Only 'cluster' module does it, so 'child_process' and its ChildProcess we're using here
-	//       still needs us to manually fire the 'online' event
-	process.emit('online')
-
 }

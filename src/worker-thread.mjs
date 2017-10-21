@@ -1,20 +1,18 @@
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 
 
+// Create 
+var defaultContext = {}
+
 if (isWorker) {
+	// Shim module.exports and expots and point it to defaultContext.
 	if (isBrowser) {
 		if (global.exports === undefined)
 			global.exports = {}
 		if (global.module === undefined)
-			global.module = {
-				exports: global.exports
-			}
-		var defaultContext = global.exports
-	} else {
-		var defaultContext = {}
+			global.module = {exports: global.exports}
+		defaultContext = global.exports
 	}
-	//process.setContext = setContext
-	//process.register = register
 }
 
 // Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
@@ -28,37 +26,41 @@ if (isBrowser)
 if (isNode)
 	var fallbackContext = global
 
-var contexts = [fallbackContext, defaultContext]
+// List of contexts where we'll be location methods to execute
+export var contexts = [fallbackContext, defaultContext]
 
-export function setContext(customContext) {
+// Adds user-selected/created context to the list of searchable contexts
+export function setContext(customContext = {}) {
 	contexts.push(customContext)
+	return customContext
 }
 
+// User can register selected methods instead of setting whole context
 export function register(value, name = value.name) {
 	defaultContext[name] = value
 }
 
 export function resolvePath(path) {
 	var result
-	var context
 	var ci = contexts.length
 	if (path.includes('.')) {
-		var sections = path.split('.').reverse()
+		var pathSections = path.split('.').reverse()
 		var section
-		while (!result && --ci) {
-			context = contexts[ci]
-			let si = sections.length
-			while (section = sections[--si])
+		while (result === undefined && ci--) {
+			let context = contexts[ci]
+			let si = pathSections.length
+			while (si--) {
+				section = pathSections[si]
 				context = context[section]
+				if (context === undefined) break
+			}
 			result = context
 		}
-		return result
 	} else {
-		while (!result && --ci) {
+		while (result === undefined && ci--)
 			result = contexts[ci][path]
-		}
-		return result
 	}
+	return result
 }
 
 if (isWorker) {

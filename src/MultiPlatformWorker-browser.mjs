@@ -1,9 +1,10 @@
 import {isMaster, isBrowser, supportsWorkerModules} from './platform.mjs'
 import {EventEmitter} from './EventEmitter.mjs'
 import {shimNodeIpc, routeToEventEmitter} from './messaging.mjs'
-import {getBlobUrl} from './construct-wrapper.mjs'
 import {fachmanPath} from './platform.mjs'
 import path, {getCwd} from './shim-path.mjs'
+import {getBlobUrl} from './construct-wrapper.mjs'
+
 
 
 export var BrowserWorker

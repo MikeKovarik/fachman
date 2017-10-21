@@ -1,4 +1,4 @@
-import path, {getCwd} from './shim-path.mjs'
+import path, {getCwd, sanitizePath} from './shim-path.mjs'
 
 
 // is true if it's the main UI thread in browser, or main thread in Node
@@ -47,10 +47,6 @@ if (isNode) {
 
 export var fachmanPath
 
-
-function sanitizePath(path) {
-	return path.replace(/\\/g, '/')
-}
 
 function getModuleIndexPath() {
 	if (typeof __filename === 'undefined')

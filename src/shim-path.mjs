@@ -6,12 +6,8 @@ var _path = native || {}
 
 if (Object.keys(_path).length === 0) {
 
-	function sanitize(str) {
-		return str.replace(/\\/g, '/')
-	}
-
 	function splitSections(str) {
-		str = sanitize(str)
+		str = sanitizePath(str)
 		if (str.includes('://'))
 			str = str.slice(str.indexOf('://') + 3)
 		return str.split('/')
@@ -79,4 +75,8 @@ export function getCwd() {
 		return process.cwd()
 	else
 		return _path.dirname(location.href)
+}
+
+export function sanitizePath(str) {
+	return str.replace(/\\/g, '/')
 }

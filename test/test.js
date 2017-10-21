@@ -238,16 +238,42 @@ describe('ProxyWorker', () => {
 
 	describe('context, autowrap', () => {
 
-		it(`resolvePath() simple`, async () => {
-			fachman.setContext({foobar: 42})
-			var result = fachman.resolvePath('foobar')
-			assert.equal(result, 42)
-		})
+		describe('resolvePath()', () => {
 
-		it(`resolvePath() nested`, async () => {
-			fachman.setContext({deeply: {nested: {foobar: 41}}})
-			var result = fachman.resolvePath('deeply.nested.foobar')
-			assert.equal(result, 41)
+			it(`simple`, async () => {
+				var myCtx = fachman.setContext({foobar: 42})
+				assert.include(fachman.contexts, myCtx)
+				var result = fachman.resolvePath('foobar')
+				assert.equal(result, 42)
+				removeFromArray(fachman.contexts, myCtx)
+			})
+
+			it(`nested`, async () => {
+				var myCtx = fachman.setContext({deeply: {nested: {foobar: 41}}})
+				assert.include(fachman.contexts, myCtx)
+				var result = fachman.resolvePath('deeply.nested.foobar')
+				assert.equal(result, 41)
+				removeFromArray(fachman.contexts, myCtx)
+			})
+
+			it(`simple in secondary context`, async () => {
+				var mainCtx = fachman.setContext({foobar: 42})
+				var dummyCtx = fachman.setContext({})
+				var result = fachman.resolvePath('foobar')
+				assert.equal(result, 42)
+				removeFromArray(fachman.contexts, mainCtx)
+				removeFromArray(fachman.contexts, dummyCtx)
+			})
+
+			it(`nested in secondary context`, async () => {
+				var mainCtx = fachman.setContext({deeply: {nested: {foobar: 41}}})
+				var dummyCtx = fachman.setContext({})
+				var result = fachman.resolvePath('deeply.nested.foobar')
+				assert.equal(result, 41)
+				removeFromArray(fachman.contexts, mainCtx)
+				removeFromArray(fachman.contexts, dummyCtx)
+			})
+
 		})
 
 		/*it('autowrap', async () => {
@@ -260,7 +286,12 @@ describe('ProxyWorker', () => {
 		describe('manual setContext()', () => {
 
 			var worker
-			before(async () => worker = new ProxyWorker('worker-module-setcontext.js'))
+			before(async () => {
+				worker = new ProxyWorker('worker-module-setcontext.js', {
+					autoWrapWorker: false
+				})
+				await worker.ready
+			})
 			after(async () => worker.terminate())
 
 			it('should locate simple methods', async () => {
@@ -276,7 +307,12 @@ describe('ProxyWorker', () => {
 		describe('manual register()', () => {
 
 			var worker
-			before(async () => worker = new ProxyWorker('worker-module-register.js'))
+			before(async () => {
+				worker = new ProxyWorker('worker-module-register.js', {
+					autoWrapWorker: false
+				})
+				await worker.ready
+			})
 			after(async () => worker.terminate())
 
 			it('should locate simple methods', async () => {
@@ -292,7 +328,12 @@ describe('ProxyWorker', () => {
 		describe('autocontext cjs', () => {
 
 			var worker
-			before(async () => worker = new ProxyWorker('worker-module-cjs.js'))
+			before(async () => {
+				worker = new ProxyWorker('worker-module-cjs.js', {
+					autoWrapWorker: false
+				})
+				await worker.ready
+			})
 			after(async () => worker.terminate())
 
 			it('should locate simple methods', async () => {
@@ -308,7 +349,12 @@ describe('ProxyWorker', () => {
 		describe('autocontext esm', () => {
 
 			var worker
-			before(async () => worker = new ProxyWorker('worker-module-esm.mjs'))
+			before(async () => {
+				worker = new ProxyWorker('worker-module-esm.js', {
+					autoWrapWorker: false
+				})
+				await worker.ready
+			})
 			after(async () => worker.terminate())
 
 			it('should locate simple methods', async () => {
@@ -785,6 +831,12 @@ describe('inline worker creation', () => {
 
 })
 */
+
+function removeFromArray(array, item) {
+	var index = array.indexOf(item)
+	if (index !== -1)
+		array.splice(index, 1)
+}
 
 function onPromise(scope, event) {
 	return new Promise(resolve => scope.on(event, resolve))

@@ -1,24 +1,16 @@
-import net from 'net'
+import './shim-node-globals.mjs'
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {removeFromArray} from './util.mjs'
 import {shimBrowserIpc, routeToEventSource} from './messaging.mjs'
 import {shimNodeIpc, routeToEventEmitter} from './messaging.mjs'
 import {routeToThread} from './messaging.mjs'
-import {EventEmitter} from './EventEmitter.mjs'
+import {EventEmitter} from './shim-events.mjs'
 
 
-
-// polyfill 'global'
-if (isBrowser && typeof global === 'undefined')
-	self.global = self
 
 if (isWorker) {
 
 	if (isBrowser) {
-		// Get or shim 'process' object used for ipc in child
-		if (self.process === undefined)
-			self.process = global.process = new EventEmitter
-			//global.process = new EventEmitter
 
 		process.send = self.postMessage.bind(self)
 		process.postMessage = self.postMessage.bind(self)

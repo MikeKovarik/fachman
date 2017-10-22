@@ -1,5 +1,5 @@
 import {timeout, MAX_THREADS, removeFromArray} from './util.mjs'
-import {EventEmitter} from './EventEmitter.mjs'
+import {EventEmitter} from './shim-events.mjs'
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 import {createNestedProxy} from './nestedProxy.mjs'
 import {ProxyWorker, createTask} from './ProxyWorker.mjs'

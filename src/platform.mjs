@@ -1,4 +1,4 @@
-import path, {getCwd, sanitizePath} from './shim-path.mjs'
+import path, {sanitizePath} from './shim-path.mjs'
 
 
 // is true if it's the main UI thread in browser, or main thread in Node
@@ -31,22 +31,11 @@ if (typeof navigator === 'object') {
 	}
 }
 
-
-// Only available in node (browser's alternative is constructing blob url wrapper)
-export var launchedAsWrapper = false
-if (isNode) {
-	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
-	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
-	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
-	var scriptPath = process.argv[1]
-	if (scriptPath === __filename) {
-		process.argv.splice(1,1)
-		launchedAsWrapper = true
-	}
-}
-
 export var fachmanPath
 
+if (isMaster)
+	// Absolute path to the fachman script file. Sanitize the path.
+	fachmanPath = sanitizePath(getModuleIndexPath())
 
 function getModuleIndexPath() {
 	if (typeof __filename === 'undefined')
@@ -56,13 +45,6 @@ function getModuleIndexPath() {
 	//	return __filename
 	else
 		return __filename
-}
-
-if (isMaster) {
-	// Absolute path to the fachman script file. Sanitize the path.
-	fachmanPath = sanitizePath(getModuleIndexPath())
-	// Get current location of the app that imports fachman
-	var cwd = sanitizePath(getCwd() + '/')
 }
 
 // https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables

@@ -1,6 +1,6 @@
 import path from 'path'
 import {isMaster, isNode, fachmanPath, supportsNativeModules} from './platform.mjs'
-import {EventEmitter} from './EventEmitter.mjs'
+import {EventEmitter} from './shim-events.mjs'
 import {ChildProcess} from 'child_process'
 import {shimBrowserIpc, routeToEventSource} from './messaging.mjs'
 

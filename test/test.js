@@ -329,9 +329,7 @@ describe('ProxyWorker', () => {
 
 			var worker
 			before(async () => {
-				worker = new ProxyWorker('worker-module-cjs.js', {
-					autoWrapWorker: false
-				})
+				worker = new ProxyWorker('worker-module-cjs.js')
 				await worker.ready
 			})
 			after(async () => worker.terminate())
@@ -346,13 +344,11 @@ describe('ProxyWorker', () => {
 
 		})
 
-		describe('autocontext esm', () => {
+		/*describe(`autocontext native esm .mjs (won't work until Node and Worker support native modules)`, () => {
 
 			var worker
 			before(async () => {
-				worker = new ProxyWorker('worker-module-esm.js', {
-					autoWrapWorker: false
-				})
+				worker = new ProxyWorker('worker-module-esm.js')
 				await worker.ready
 			})
 			after(async () => worker.terminate())
@@ -365,7 +361,7 @@ describe('ProxyWorker', () => {
 				assert.equal('function', await getTypeOf(worker, 'deeply.nested.echo'))
 			})
 
-		})
+		})*/
 
 	})
 

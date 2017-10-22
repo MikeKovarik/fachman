@@ -1,8 +1,8 @@
 import {isMaster, isBrowser, supportsWorkerModules} from './platform.mjs'
-import {EventEmitter} from './EventEmitter.mjs'
+import {EventEmitter} from './shim-events.mjs'
 import {shimNodeIpc, routeToEventEmitter} from './messaging.mjs'
 import {fachmanPath} from './platform.mjs'
-import path, {getCwd} from './shim-path.mjs'
+import path from './shim-path.mjs'
 import {getBlobUrl} from './construct-wrapper.mjs'
 
 
@@ -23,7 +23,7 @@ if (isMaster && isBrowser) {
 				super(code, options)
 				// Convert worker path into absolute path
 				if (!workerPath.includes('://'))
-					workerPath = path.join(getCwd(), workerPath)
+					workerPath = path.join(process.cwd(), workerPath)
 				// Relative URLs can't be used in blob workers because those have 'blob:' prefix.
 				// The blob wrapper we made earlier listens for message with fachman and actual worker path.
 				// Once that's received, the worker imports scripts and self-destructs the message and listener.

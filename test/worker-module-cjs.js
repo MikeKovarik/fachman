@@ -27,8 +27,8 @@ exports.compute = async function(a, b) {
 	return add(a, b) * add(a, b)
 }
 
-/*
+
 process.on('typeof', path => {
 	var found = fachman.resolvePath(path)
 	process.emit('typeis', typeof found)
-})*/
+})

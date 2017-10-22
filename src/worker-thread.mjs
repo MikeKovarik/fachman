@@ -4,15 +4,14 @@ import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
 // Create 
 var defaultContext = {}
 
-if (isWorker) {
-	// Shim module.exports and expots and point it to defaultContext.
-	if (isBrowser) {
-		if (global.exports === undefined)
-			global.exports = {}
-		if (global.module === undefined)
-			global.module = {exports: global.exports}
-		defaultContext = global.exports
-	}
+// Shim module.exports and expots and point it to defaultContext.
+// TODO: Hide module + exports in master behind option (true by default)
+if (isBrowser && isWorker) {
+	if (global.exports === undefined)
+		global.exports = {}
+	if (global.module === undefined)
+		global.module = {exports: global.exports}
+	defaultContext = global.exports
 }
 
 // Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.

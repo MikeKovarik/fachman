@@ -1,5 +1,5 @@
 import {isMaster, isWorker, isNode, isBrowser} from './platform.mjs'
-import {EventEmitter} from './EventEmitter.mjs'
+import {EventEmitter} from './shim-events.mjs'
 
 
 // Routes messages from EventSource as events into EventEmitter and vice versa.

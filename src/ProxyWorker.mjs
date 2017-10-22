@@ -71,6 +71,9 @@ export class ProxyWorker extends MultiPlatformWorker {
 		// Handle closing of the thread and 
 		this._onExit = this._onExit.bind(this)
 		this.on('exit', this._onExit)
+		if (isNode) {
+			// TODO: handle SIGTERM and SIGINT in Node
+		}
 	}
 
 	_onExit(code) {

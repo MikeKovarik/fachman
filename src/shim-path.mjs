@@ -70,13 +70,6 @@ if (Object.keys(_path).length === 0) {
 
 export default _path
 
-export function getCwd() {
-	if (typeof process === 'object' && process.cwd)
-		return process.cwd()
-	else
-		return _path.dirname(location.href)
-}
-
 export function sanitizePath(str) {
 	return str.replace(/\\/g, '/')
 }

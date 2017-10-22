@@ -1,12 +1,17 @@
-import {isWorker, isNode, isBrowser, launchedAsWrapper} from './platform.mjs'
+import {isWorker, isNode, isBrowser} from './platform.mjs'
 import {setContext} from './worker-thread.mjs'
 import {sanitizePath} from './shim-path.mjs'
 
 
-if (isNode && isWorker && launchedAsWrapper) {
+// Only available in node (browser's alternative is constructing blob url wrapper)
+if (isNode && isWorker && __filename === process.argv[1]) {
 	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
 	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
 	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
+
+	// Remove path to fachman from process arguments
+	process.argv.splice(1,1)
+	global.fachman = exports
 
 	// Delay loading user script until all of fachman is loaded and interpreted.
 	// NOTE: This is necessary because rollup shoves all fachman souce files into one. This file will end up

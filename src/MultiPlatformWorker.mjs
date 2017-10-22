@@ -1,7 +1,7 @@
 import {BrowserWorker} from './MultiPlatformWorker-browser.mjs'
 import {NodeWorker} from './MultiPlatformWorker-node.mjs'
 import {isBrowser, isNode, isMaster} from './platform.mjs'
-import {EventEmitter} from './EventEmitter.mjs'
+import {EventEmitter} from './shim-events.mjs'
 import {routeToThread} from './messaging.mjs'
 
 

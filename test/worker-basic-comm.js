@@ -7,7 +7,7 @@ else
 // helper variables
 var isBrowser = typeof navigator === 'object'
 var isNode = typeof process === 'object' && process.versions && process.versions.node
-
+/*
 // Testing basic messaging/ipc and using it to test existence of available/defined properties and methods
 ;(() => {
 	if (isBrowser) {
@@ -25,7 +25,7 @@ var isNode = typeof process === 'object' && process.versions && process.versions
 		}
 	}
 })()
-
+*/
 
 // WebWorker way of passing raw messages
 self.addEventListener('message', ({data}) => {

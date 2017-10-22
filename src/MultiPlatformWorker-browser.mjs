@@ -16,11 +16,11 @@ if (isMaster && isBrowser) {
 	BrowserWorker = class BrowserWorker extends self.Worker {
 
 		constructor(workerPath, options = {}) {
-			if (options.autoWrapWorker) {
+			if (options.autoWrapWorker !== false) {
 				// Get or create standard custom wrapper for given worker.
 				// The code will import fachman and then the desired worker. 
-				var code = getBlobUrl(options.type === 'module')
-				super(code, options)
+				var blobUrl = getBlobUrl(options.type === 'module')
+				super(blobUrl, options)
 				// Convert worker path into absolute path
 				if (!workerPath.includes('://'))
 					workerPath = path.join(process.cwd(), workerPath)

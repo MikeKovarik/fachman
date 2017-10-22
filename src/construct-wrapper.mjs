@@ -47,11 +47,11 @@ if (isNode && isWorker && __filename === process.argv[1]) {
 
 // Browser is capable of creating worker code dynamically in browser by turning the code into blob and then to url.
 
-var blobUrl
+var universalBlobUrl
 
 export function getBlobUrl(esm = false) {
 	// TODO: ES Module support when it's available in browsers
-	if (!blobUrl) {
+	if (!universalBlobUrl) {
 		// Note: Relative URLs can't be used in blob worker.
 		//       Absolute paths of scripts to import has to be sent through message.
 		var code = `
@@ -61,9 +61,9 @@ export function getBlobUrl(esm = false) {
 				importScripts(fachmanPath, workerPath)
 			}
 			`
-		blobUrl = createBlobUrl(code)
+		universalBlobUrl = createBlobUrl(code)
 	}
-	return blobUrl
+	return universalBlobUrl
 }
 
 function createBlobUrl(string) {

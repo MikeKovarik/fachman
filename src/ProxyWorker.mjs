@@ -44,36 +44,17 @@ export class ProxyWorker extends MultiPlatformWorker {
 		}
 		// We will open user worker script which will load this library.
 		super(workerPath, options)
-		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
 		// Apply options to this instance
 		Object.assign(this, options)
-		// TODO: Apply user's options
-		this._setupLifecycle()
-		this._setupTasks()
+		// Setup events and structures needed for creating tasks.
+		// List of resolvers and rejectors of unfinished promises (ongoing requests)
+		this._taskResolvers = new Map
+		this.on('task-end', this._onTaskEnd.bind(this))
+		this.once('exit', this._onExit.bind(this))
 		// Creation of the proxy itself, intercepting calls to the proxy object
 		// and passing them into the worker.
 		this.invokeTask = this.invokeTask.bind(this)
 		this.proxy = createNestedProxy({}, this.invokeTask)
-	}
-
-	_setupLifecycle() {
-		// The worker starts off as offline
-		this.online = false
-		// Creating ready promise which resolves after first 'online' event, when worker is ready
-		this.ready = new Promise(resolve => {
-			// Warning: Don't try to wrap this into chaining promise. Worker loads synchronously
-			//          and synchronous EventEmitter callbacks would race each other over async Promise.
-			this.once('online', () => {
-				this.online = true
-				resolve()
-			})
-		})
-		// Handle closing of the thread and 
-		this._onExit = this._onExit.bind(this)
-		this.on('exit', this._onExit)
-		if (isNode) {
-			// TODO: handle SIGTERM and SIGINT in Node
-		}
 	}
 
 	_onExit(code) {
@@ -83,15 +64,10 @@ export class ProxyWorker extends MultiPlatformWorker {
 		} else {
 			// Thread was abruptly killed. We might want to restart it and/or restart unfinished tasks.
 			// Note: This should not be happening to browser Workers, but only to node child processes.
+			// Note: Closed worker can't be restarted. Most online/exit/close handler use .once instead of .on,
+			//       and the class inherits from MultiPlatformWorker and that inhreits from broswer Worker which
+			//       can't be restarted (although ChildProcess might just need to call .spawn again).
 		}
-		this.online = false
-	}
-
-	_setupTasks() {
-		// List of resolvers and rejectors of unfinished promises (ongoing requests)
-		this._taskResolvers = new Map
-		this._onTaskEnd = this._onTaskEnd.bind(this)
-		this.on('task-end', this._onTaskEnd)
 	}
 
 	// Proxy get() handler.

@@ -12,7 +12,7 @@ var assert = chai.assert
 var {Cluster, ProxyWorker, MultiPlatformWorker, EventEmitter, isNode, isBrowser} = fachman
 
 // Utility wrapper for promisified setTimeout
-var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve), millis)
+var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
 
 
 
@@ -29,46 +29,81 @@ function isClosed(worker) {
 	assert.isFalse(worker.online)
 }
 
-var workerPath = 'test-worker.js'
+// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
+var defaultTestWorker = 'test-worker.js'
 
-describe('ProxyWorker', () => {
-/*
-	it('module', async () => {
-		var worker = new ProxyWorker('test-module.mjs')
-		await timeout(1000)
-		worker.terminate()
-	})
-*/
-	describe('lifecycle', () => {
 
-		it('should create worker thread', () => {
-			var worker = new ProxyWorker(workerPath)
+
+
+
+describe('MultiPlatformWorker class', () => {
+
+
+	describe('instantiation', () => {
+
+		it('should instantiate WorkerProxy class', () => {
+			var worker = new ProxyWorker('worker-lifecycle.js')
 			assert.exists(worker.postMessage)
 			assert.exists(worker.addEventListener)
 			worker.terminate()
 		})
 
+		it(`should spawn responsing worker thread/process (wrapped)`, done => {
+			var worker = new ProxyWorker('worker-start-announcer.js', {
+				autoWrapWorker: true
+			})
+			if (isBrowser) worker.addEventListener('message', e => onMessage(e.data))
+			if (isNode) worker.on('message', onMessage)
+			function onMessage(data) {
+				if (data !== 'experience tranquility') return
+				worker.terminate()
+				done()
+			}
+		})
+
+		it(`should spawn responsing worker thread/process (nowrap)`, done => {
+			var worker = new ProxyWorker('worker-start-announcer.js', {
+				autoWrapWorker: false
+			})
+			if (isBrowser) worker.addEventListener('message', e => onMessage(e.data))
+			if (isNode) worker.on('message', onMessage)
+			function onMessage(data) {
+				if (data !== 'experience tranquility') return
+				worker.terminate()
+				done()
+			}
+		})
+
+	})
+
+
+	describe('methods and properties', () => {
+
+		var worker
+		beforeEach(async () => {
+			worker = new ProxyWorker('worker-lifecycle.js', {
+				autoWrapWorker: false
+			})
+		})
+
 		it('.terminate() should kill worker thread', async () => {
-			var worker = new ProxyWorker(workerPath)
 			await timeout(100)
 			worker.terminate()
 			await timeout(20)
 			isClosed(worker)
-			// TODO
+			// TODO - properly test if the process is truly dead
 		})
 
 		it('.kill() should kill worker thread', async () => {
-			var worker = new ProxyWorker(workerPath)
 			await timeout(100)
 			worker.kill()
 			await timeout(20)
 			isClosed(worker)
-			// TODO
+			// TODO - properly test if the process is truly dead
 		})
 
-		it(`.online property starts as 'false', turns 'true' when worker is ready, and 'false' when it's terminated`, done => {
-			var worker = new ProxyWorker(workerPath)
-			assert.isFalse(worker.online, '.online should be false at the beggining')
+		it(`.online shoul initially be 'false', turns 'true' when worker is ready, and 'false' when it's terminated`, done => {
+			assert.isFalse(worker.online, '.online should be false at the begining')
 			worker.once('online', () => {
 				assert.isTrue(worker.online, `.online should be true before after 'online' event is fired from worker`)
 				worker.kill()
@@ -84,70 +119,62 @@ describe('ProxyWorker', () => {
 
 	describe('lifecycle events', () => {
 
-		it(`created thread should fire 'online' event`, done => {
-			var worker = new ProxyWorker(workerPath)
+		var worker
+		beforeEach(async () => {
+			worker = new ProxyWorker('worker-lifecycle.js', {
+				autoWrapWorker: false
+			})
+		})
+
+		it(`should fire 'online' event on creation`, done => {
 			worker.on('online', () => {
 				worker.terminate()
 				done()
 			})
 		})
 
-		it(`closing thread should fire 'exit' event`, done => {
-			var worker = new ProxyWorker(workerPath)
+		it(`should fire 'exit' event after closing`, done => {
 			worker.once('exit', done)
 			worker.once('online', () => worker.terminate())
 		})
 
-		it(`terminating thread should fire 'exit' event with null and SIGTERM arguments`, done => {
-			var worker = new ProxyWorker(workerPath)
-			worker.on('exit', (exitCode, statusCode) => {
-				assert.isNull(exitCode)
-				assert.equal(statusCode, 'SIGTERM')
-				done()
-			})
+		it(`should fire 'close' event after closing`, done => {
+			worker.once('close', done)
 			worker.once('online', () => worker.terminate())
 		})
 
-		it(`close()/process.exit() inside the worker should fire 'exit' event with code 0`, done => {
-			var worker = new ProxyWorker(workerPath)
-			worker.on('exit', code => {
-				assert.equal(code, 0)
-				done()
-			})
-			worker.once('online', () => {
-				if (isBrowser) worker.postMessage({event: 'kys-close', args: []})
-				if (isNode) worker.send({event: 'kys-process-exit', args: []})
-			})
+		it(`.terminate() should fire 'exit' event with code null and SIGTERM signal`, async () => {
+			worker.once('online', () => worker.terminate())
+			var [code, signal] = await onPromiseArgs(worker, 'exit')
+			assert.isNull(code)
+			assert.equal(signal, 'SIGTERM')
 		})
 
-		it(`close(1)/process.exit(1) inside the worker should fire 'exit' event with code 1`, done => {
-			var targetCode = 1
-			var worker = new ProxyWorker(workerPath)
-			worker.on('exit', code => {
-				assert.equal(code, targetCode)
-				done()
-			})
-			worker.once('online', () => {
-				if (isBrowser) worker.postMessage({event: 'kys-close', args: [targetCode]})
-				if (isNode) worker.send({event: 'kys-process-exit', args: [targetCode]})
-			})
+		it(`.kill() should fire 'exit' event with code null and SIGTERM signal`, async () => {
+			worker.once('online', () => worker.kill())
+			var [code, signal] = await onPromiseArgs(worker, 'exit')
+			assert.isNull(code)
+			assert.equal(signal, 'SIGTERM')
 		})
 
-		/*it(`process.kill() inside the worker should ...`, done => {
-			var targetSignal = 'SIGHUP'
-			var worker = new ProxyWorker(workerPath)
-			worker.on('exit', (code, signal) => {
-				assert.equal(signal, targetSignal)
-				done()
-			})
-			worker.once('online', () => {
-				worker.send({event: 'kys-process-kill', args: [targetSignal]})
-			})
-		})*/
+		it(`closing from inside should fire 'exit' event with code 0 and null signal`, async () => {
+			worker.once('online', () => worker.emit('kys'))
+			var [code, signal] = await onPromiseArgs(worker, 'exit')
+			assert.equal(code, 0)
+			assert.isNull(signal)
+		})
+
+		it(`'online' property should change after 'online' and 'exit' events`, async () => {
+			assert.isFalse(worker.online)
+			await onPromise(worker, 'online')
+			assert.isTrue(worker.online)
+			worker.emit('kys')
+			await onPromise(worker, 'exit')
+			assert.isFalse(worker.online)
+		})
 
 		it(`.ready promise exists`, async () => {
 			// TODO
-			var worker = new ProxyWorker(workerPath)
 			assert.exists(worker.ready)
 			assert.equal(worker.ready.constructor, Promise)
 			worker.terminate()
@@ -155,7 +182,6 @@ describe('ProxyWorker', () => {
 
 		it(`.ready should resolve after 'online' event`, async () => {
 			// TODO
-			var worker = new ProxyWorker(workerPath)
 			await worker.ready
 			assert.isTrue(worker.online)
 			worker.terminate()
@@ -165,7 +191,6 @@ describe('ProxyWorker', () => {
 		if (isNode) {
 			// TODO: figure out a way to forcibly kill thread so that it returns 1
 			it(`closing/killing thread should fire 'exit' event with code 1`, done => {
-				var worker = new ProxyWorker(workerPath)
 				await timeout(100)
 				worker.on('exit', code => {
 					assert.equal(code, 0)
@@ -176,15 +201,17 @@ describe('ProxyWorker', () => {
 		}
 */
 
-
 	})
+
 
 	describe('master-worker communication', () => {
 
 		// fixture worker
 		var worker
 		before(async () => {
-			worker = new ProxyWorker(workerPath)
+			worker = new ProxyWorker('worker-basic-comm.js', {
+				autoWrapWorker: false
+			})
 		})
 		after(async () => worker.terminate())
 
@@ -276,12 +303,6 @@ describe('ProxyWorker', () => {
 
 		})
 
-		/*it('autowrap', async () => {
-			assert.equal(true, false)
-		})
-		it('autowrap false', async () => {
-			assert.equal(true, false)
-		})*/
 
 		describe('manual setContext()', () => {
 
@@ -304,6 +325,7 @@ describe('ProxyWorker', () => {
 
 		})
 
+
 		describe('manual register()', () => {
 
 			var worker
@@ -325,6 +347,7 @@ describe('ProxyWorker', () => {
 
 		})
 
+
 		describe('autocontext cjs', () => {
 
 			var worker
@@ -343,6 +366,7 @@ describe('ProxyWorker', () => {
 			})
 
 		})
+
 
 		/*describe(`autocontext native esm .mjs (won't work until Node and Worker support native modules)`, () => {
 
@@ -365,12 +389,187 @@ describe('ProxyWorker', () => {
 
 	})
 
+
+})
+
+
+
+
+describe('process (spawned by MultiPlatformWorker)', () => {
+
+	var worker
+/*
+	before(done => {
+		// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
+		worker = new ProxyWorker(defaultTestWorker)
+		worker.process.once('exit', code => {
+			exitCode = code
+			done()
+		})
+	})
+	it('exit code should be zero', () => {
+		assert.equal(exitCode, 0)
+	})
+*/
+	describe('properties and globals', () => {
+
+		var worker
+		before(async () => worker = new MultiPlatformWorker('worker-availchecker.js'))
+		after(async () => worker.terminate())
+
+		it(`'self' property should be available or shimmed`, async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'self'), 'object')
+		})
+
+		it(`'global' property should be available or shimmed`, async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'global'), 'object')
+		})
+
+		it(`'process' property should be available or shimmed`, async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'process'), 'object')
+		})
+
+		it(`'module' property should be available or shimmed`, async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'module'), 'object')
+		})
+
+		it(`'exports' property should be available or shimmed`, async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'exports'), 'object')
+		})
+
+		it('importScripts() should be alias for (multiple) require()', async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'importScripts'), 'function')
+		})
+
+		/*it('require() should be alias for importScripts()', async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'require'), 'function')
+		})*/
+
+	})
+
+
+	describe('worker-master communication', () => {
+
+		var worker
+		before(async () => worker = new MultiPlatformWorker('worker-availchecker.js'))
+		after(async () => worker.terminate())
+
+		it('self.addEventListener() should be function', async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'self.addEventListener'), 'function')
+		})
+
+		it('self.postMessage() should be function', async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'self.postMessage'), 'function')
+		})
+
+		it('process.on() should be function', async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'process.on'), 'function')
+		})
+
+		it('process.send() should be function', async () => {
+			assert.equal(await getTypeOfLowlevel(worker, 'process.send'), 'function')
+		})
+
+	})
+
+
+	describe('methods and properties', () => {
+
+		var worker
+		beforeEach(async () => {
+			worker = new MultiPlatformWorker('worker-lifecycle.js', {
+				autoWrapWorker: false
+			})
+		})
+
+		it('self.close() should close the worker with', async () => {
+			await onPromise(worker, 'online')
+			worker.emit('kys-close')
+			await onPromise(worker, 'exit')
+			// TODO - properly test if the process is truly dead
+		})
+
+		it('process.exit() should close the worker with', async () => {
+			await onPromise(worker, 'online')
+			worker.emit('kys-process-exit')
+			await onPromise(worker, 'exit')
+			// TODO - properly test if the process is truly dead
+		})
+
+		it('self.close() should close the worker with code 0', async () => {
+			worker.on('online', () => worker.emit('kys-close'))
+			var code = await onPromise(worker, 'exit')
+			assert.equal(code, 0)
+		})
+
+		it('process.exit() should close the worker with code 0', async () => {
+			worker.on('online', () => worker.emit('kys-process-exit'))
+			var code = await onPromise(worker, 'exit')
+			assert.equal(code, 0)
+		})
+
+		it('self.close(1) should close the worker with code 1', async () => {
+			worker.on('online', () => worker.emit('kys-close', 1))
+			var code = await onPromise(worker, 'exit')
+			assert.equal(code, 1)
+		})
+
+		it('process.exit(1) should close the worker with code 1', async () => {
+			worker.on('online', () => worker.emit('kys-process-exit', 1))
+			var code = await onPromise(worker, 'exit')
+			assert.equal(code, 1)
+		})
+/*
+		it(`close()/process.exit() inside the worker should fire 'exit' event with code 0`, done => {
+			worker.on('exit', code => {
+				assert.equal(code, 0)
+				done()
+			})
+			worker.once('online', () => {
+				if (isBrowser) worker.postMessage({event: 'kys-close', args: []})
+				if (isNode) worker.send({event: 'kys-process-exit', args: []})
+			})
+		})
+
+		it(`close(1)/process.exit(1) inside the worker should fire 'exit' event with code 1`, done => {
+			var targetCode = 1
+			worker.on('exit', code => {
+				assert.equal(code, targetCode)
+				done()
+			})
+			worker.once('online', () => {
+				if (isBrowser) worker.postMessage({event: 'kys-close', args: [targetCode]})
+				if (isNode) worker.send({event: 'kys-process-exit', args: [targetCode]})
+			})
+		})
+*/
+	})
+
+	/*it('process.kill() should kill the process', done => {
+		// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
+		var worker = new MultiPlatformWorker(defaultTestWorker)
+		worker.on('online', async () => {
+			worker.emit('kys-process-kill')
+			await timeout(400)
+			isClosed(worker)
+			done()
+		})
+	})*/
+
+	// TODO
+
+})
+
+
+describe('ProxyWorker class', () => {
+
 	describe('task invocation', () => {
 
 		// fixture worker
 		var worker, proxy
 		before(async () => {
-			worker = new ProxyWorker(workerPath)
+			// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
+			worker = new ProxyWorker(defaultTestWorker)
 			proxy = worker.proxy
 		})
 		after(async () => worker.terminate())
@@ -434,7 +633,8 @@ describe('ProxyWorker', () => {
 		// fixture worker
 		var worker, proxy
 		beforeEach(async () => {
-			worker = new ProxyWorker(workerPath)
+			// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
+			worker = new ProxyWorker(defaultTestWorker)
 			proxy = worker.proxy
 		})
 		afterEach(async () => worker.terminate())
@@ -560,7 +760,7 @@ describe('ProxyWorker', () => {
 })
 
 
-describe('Cluster', () => {
+describe('Cluster class', () => {
 
 	// TODO
 
@@ -623,164 +823,16 @@ describe('Cluster', () => {
 })
 
 
-describe('process', () => {
 
-	var worker
-/*
-	before(done => {
-		worker = new ProxyWorker(workerPath)
-		worker.process.once('exit', code => {
-			exitCode = code
-			done()
-		})
-	})
-	it('exit code should be zero', () => {
-		assert.equal(exitCode, 0)
-	})
-*/
 
-	if (isBrowser) describe('browser Worker', () => {
-		var worker
-		before(async () => worker = new ProxyWorker(workerPath))
-		after(async () => worker.terminate())
-
-		it('native self should be available', async () => {
-			var type = await getTypeOfBrowser(worker, 'process')
-			assert.equal(type, 'object')
-		})
-		it('native self.addEventListener() / self.postMessage() should be available', async () => {
-			var type1 = await getTypeOfBrowser(worker, 'addEventListener')
-			assert.equal(type1, 'function')
-			var type2 = await getTypeOfBrowser(worker, 'postMessage')
-			assert.equal(type2, 'function')
-		})
-		it('process should be shimmed', async () => {
-			var type = await getTypeOfBrowser(worker, 'process')
-			assert.equal(type, 'object')
-		})
-
-		//it('process is shimmed', async () => {
-		//	var type = await worker.proxy.getType('process')
-		//	assert.equals(type, 'object')
-		//})
-
-		/*it('require() is alias for importScripts()', async () => {
-			assert.isFalse(true)
-		})*/
-	})
-
-	if (isNode) describe('node ChildProcess', () => {
-		var worker
-		before(async () => worker = new ProxyWorker(workerPath))
-		after(async () => worker.terminate())
-
-		it(`should shim 'self'`, async () => {
-			var type = await getTypeOfNode(worker, 'self')
-			assert.equal(type, 'object')
-		})
-
-		it('should shim self.addEventListener()', async () => {
-			var type = await getTypeOfNode(worker, 'self.addEventListener')
-			assert.equal(type, 'function')
-		})
-
-		it('should shim self.postMessage()', async () => {
-			var type = await getTypeOfNode(worker, 'self.postMessage')
-			assert.equal(type, 'function')
-		})
-
-		it('importScripts() is alias for (multiple) require()', async () => {
-			var type = await getTypeOfNode(worker, 'importScripts')
-			assert.equal(type, 'function')
-		})
-	})
-
-	it('self.close() should close the worker with', async () => {
-		var worker = new ProxyWorker(workerPath)
-		assert.isFalse(worker.online)
-		await onPromise(worker, 'online')
-		assert.isTrue(worker.online)
-		worker.emit('kys-close')
-		await onPromise(worker, 'exit')
-		assert.isFalse(worker.running)
-		assert.isFalse(worker.online)
-	})
-
-	it('process.exit() should close the worker with', async () => {
-		var worker = new ProxyWorker(workerPath)
-		assert.isFalse(worker.online)
-		await onPromise(worker, 'online')
-		assert.isTrue(worker.online)
-		worker.emit('kys-process-exit')
-		await onPromise(worker, 'exit')
-		assert.isFalse(worker.running)
-		assert.isFalse(worker.online)
-	})
-
-	it('self.close() should close the worker with code 0', done => {
-		var worker = new ProxyWorker(workerPath)
-		worker.on('online', () => worker.emit('kys-close'))
-		worker.on('exit', code => {
-			assert.equal(code, 0)
-			done()
-		})
-	})
-
-	it('process.exit() should close the worker with code 0', done => {
-		var worker = new ProxyWorker(workerPath)
-		worker.on('online', () => worker.emit('kys-process-exit'))
-		worker.on('exit', code => {
-			assert.equal(code, 0)
-			done()
-		})
-	})
-
-	it('self.close(1) should close the worker with code 1', done => {
-		var worker = new ProxyWorker(workerPath)
-		worker.on('online', () => worker.emit('kys-close', 1))
-		worker.on('exit', code => {
-			assert.equal(code, 1)
-			done()
-		})
-	})
-
-	it('process.exit(1) should close the worker with code 1', done => {
-		var worker = new ProxyWorker(workerPath)
-		worker.on('online', () => worker.emit('kys-process-exit', 1))
-		worker.on('exit', code => {
-			assert.equal(code, 1)
-			done()
-		})
-	})
-
-	/*it('process.kill() should kill the process', done => {
-		var worker = new ProxyWorker(workerPath)
-		worker.on('online', async () => {
-			worker.emit('kys-process-kill')
-			await timeout(400)
-			isClosed(worker)
-			done()
-		})
-	})*/
-
-	// TODO
-
-})
-
-describe('inline worker creation', () => {
-
-	var bloburl = 'blob:http://localhost/0154daf6-2bbb-40bf-a5dd-ff3b02a83f09'
-
-	
-
-})
 
 /*
 // NOTE: for now keps only as a concept because this would only work in browser and not in node
 describe('inline worker creation', () => {
 
 	it('closing thread should clean up listeners and cancel tasks', done => {
-		var worker = new ProxyWorker(workerPath)
+		// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
+		var worker = new ProxyWorker(defaultTestWorker)
 		worker.on('exit', () => {
 			assert.isEmpty(worker._taskResolvers)
 			done()
@@ -837,6 +889,9 @@ function removeFromArray(array, item) {
 function onPromise(scope, event) {
 	return new Promise(resolve => scope.on(event, resolve))
 }
+function onPromiseArgs(scope, event) {
+	return new Promise(resolve => scope.on(event, (...args) => resolve(args)))
+}
 
 function createTypeOfQuery(path) {
 	var id = Math.random().toFixed(10).slice(2)
@@ -863,6 +918,13 @@ function getTypeOfNode(worker, path) {
 				resolve(data.result)
 		})
 	})
+}
+
+function getTypeOfLowlevel(worker, path) {
+	if (fachman.isBrowser)
+		return getTypeOfBrowser(worker, path)
+	else
+		return getTypeOfNode(worker, path)
 }
 
 function getTypeOf(worker, path) {

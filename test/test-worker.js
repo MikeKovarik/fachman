@@ -1,3 +1,6 @@
+// TODO - depreate this test file
+
+
 //var customImport = typeof require === 'function' ? require : importScripts
 //customImport('../index.js')
 

@@ -31,10 +31,10 @@ if (isWorker) {
 			// TODO
 		}
 		process.exit = self.close = (code = 0) => {
-			// Notify master about impending end of the thread
+			// Notify master about impending end of the thread. Arguments: exit code and signal (null if exited from inside the worker)
 			// NOTE: using postMessage({...}) instead od process.emit('exit', code) because emit would get delayed
 			//       inside EventEmitter with nextTick and wouldn't surface to parent in time. postMessage is sync.
-			self.postMessage({event: 'exit', args: [code]})
+			self.postMessage({event: 'exit', args: [code, null]})
 			// Kill the thread
 			setTimeout(originalClose)
 		}

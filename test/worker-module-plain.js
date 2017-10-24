@@ -1,9 +1,3 @@
-if (typeof require === 'function')
-	var fachman = require('../index.js')
-else
-	importScripts('../index.js')
-
-
 // Utility wrapper for promisified setTimeout
 var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
 
@@ -35,14 +29,6 @@ function add(a, b) {
 async function compute(a, b) {
 	return add(a, b) * add(a, b)
 }
-
-
-fachman.register(echo)
-fachman.register(asyncEcho)
-fachman.register(deeply, 'deeply')
-fachman.register(syncHello)
-fachman.register(asyncHello)
-fachman.register(compute)
 
 
 process.on('typeof', path => {

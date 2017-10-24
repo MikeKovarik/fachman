@@ -32,7 +32,7 @@ if (isMaster && isBrowser) {
 				// Call constructor of Worker class to extends with its behavior
 				super(workerPath, options)
 			}
-			this.addEventListener('error', err => console.error(err))
+			//this.addEventListener('error', err => console.error(err))
 			// Call constructor of EventEmitter class to extends with its behavior
 			EventEmitter.call(this)
 			// Following properties are here to mimic Node's ChildProcess.

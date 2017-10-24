@@ -1,3 +1,6 @@
+// Utility wrapper for promisified setTimeout
+var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
+
 export function echo(arg) {
 	return arg
 }
@@ -8,7 +11,7 @@ export async function asyncEcho(arg, millis = 100) {
 }
 export var deeply = {
 	nested: {
-		echo: arg => args
+		echo: arg => arg
 	}
 }
 

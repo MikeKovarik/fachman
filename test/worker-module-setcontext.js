@@ -7,6 +7,9 @@ else
 var customContext = {}
 fachman.setContext(customContext)
 
+// Utility wrapper for promisified setTimeout
+var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis))
+
 customContext.echo = function(arg) {
 	return arg
 }
@@ -17,7 +20,7 @@ customContext.asyncEcho = async function(arg, millis = 100) {
 }
 customContext.deeply = {
 	nested: {
-		echo: arg => args
+		echo: arg => arg
 	}
 }
 

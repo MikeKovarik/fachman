@@ -42,6 +42,11 @@ if (isNode && isWorker && __filename === process.argv[1]) {
 		if (!string.startsWith('./') && !string.startsWith('../'))
 			return './' + string
 	}
+
+	process.on('unhandledRejection', reason => {
+		console.error(reason)
+	})
+
 }
 
 

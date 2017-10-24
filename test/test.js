@@ -23,15 +23,8 @@ describe('library', () => {
 	it('should export MultiPlatformWorker', () => assert.exists(MultiPlatformWorker))
 })
 
-function isClosed(worker) {
-	assert.isFalse(worker.running)
-	//assert.isFalse(worker.idle)
-	assert.isFalse(worker.online)
-}
 
-// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
-var defaultTestWorker = 'test-worker.js'
-
+var nativeWorkerModules = false
 
 
 
@@ -42,14 +35,14 @@ describe('MultiPlatformWorker class', () => {
 	describe('instantiation', () => {
 
 		it('should instantiate WorkerProxy class', () => {
-			var worker = new ProxyWorker('worker-lifecycle.js')
+			var worker = new MultiPlatformWorker('worker-lifecycle.js')
 			assert.exists(worker.postMessage)
 			assert.exists(worker.addEventListener)
 			worker.terminate()
 		})
 
 		it(`should spawn responsing worker thread/process (wrapped)`, done => {
-			var worker = new ProxyWorker('worker-start-announcer.js', {
+			var worker = new MultiPlatformWorker('worker-start-announcer.js', {
 				autoWrapWorker: true
 			})
 			if (isBrowser) worker.addEventListener('message', e => onMessage(e.data))
@@ -62,7 +55,7 @@ describe('MultiPlatformWorker class', () => {
 		})
 
 		it(`should spawn responsing worker thread/process (nowrap)`, done => {
-			var worker = new ProxyWorker('worker-start-announcer.js', {
+			var worker = new MultiPlatformWorker('worker-start-announcer.js', {
 				autoWrapWorker: false
 			})
 			if (isBrowser) worker.addEventListener('message', e => onMessage(e.data))
@@ -81,7 +74,7 @@ describe('MultiPlatformWorker class', () => {
 
 		var worker
 		beforeEach(async () => {
-			worker = new ProxyWorker('worker-lifecycle.js', {
+			worker = new MultiPlatformWorker('worker-lifecycle.js', {
 				autoWrapWorker: false
 			})
 		})
@@ -90,7 +83,7 @@ describe('MultiPlatformWorker class', () => {
 			await timeout(100)
 			worker.terminate()
 			await timeout(20)
-			isClosed(worker)
+			assert.isFalse(worker.online)
 			// TODO - properly test if the process is truly dead
 		})
 
@@ -98,11 +91,11 @@ describe('MultiPlatformWorker class', () => {
 			await timeout(100)
 			worker.kill()
 			await timeout(20)
-			isClosed(worker)
+			assert.isFalse(worker.online)
 			// TODO - properly test if the process is truly dead
 		})
 
-		it(`.online shoul initially be 'false', turns 'true' when worker is ready, and 'false' when it's terminated`, done => {
+		it(`.online should initially be 'false', turns 'true' when worker is ready, and 'false' when it's terminated`, done => {
 			assert.isFalse(worker.online, '.online should be false at the begining')
 			worker.once('online', () => {
 				assert.isTrue(worker.online, `.online should be true before after 'online' event is fired from worker`)
@@ -114,6 +107,12 @@ describe('MultiPlatformWorker class', () => {
 			})
 		})
 
+		it(`.ready should be a promise`, async () => {
+			assert.exists(worker.ready)
+			assert.equal(worker.ready.constructor, Promise)
+			worker.terminate()
+		})
+
 	})
 
 
@@ -121,7 +120,7 @@ describe('MultiPlatformWorker class', () => {
 
 		var worker
 		beforeEach(async () => {
-			worker = new ProxyWorker('worker-lifecycle.js', {
+			worker = new MultiPlatformWorker('worker-lifecycle.js', {
 				autoWrapWorker: false
 			})
 		})
@@ -173,15 +172,7 @@ describe('MultiPlatformWorker class', () => {
 			assert.isFalse(worker.online)
 		})
 
-		it(`.ready promise exists`, async () => {
-			// TODO
-			assert.exists(worker.ready)
-			assert.equal(worker.ready.constructor, Promise)
-			worker.terminate()
-		})
-
 		it(`.ready should resolve after 'online' event`, async () => {
-			// TODO
 			await worker.ready
 			assert.isTrue(worker.online)
 			worker.terminate()
@@ -209,9 +200,10 @@ describe('MultiPlatformWorker class', () => {
 		// fixture worker
 		var worker
 		before(async () => {
-			worker = new ProxyWorker('worker-basic-comm.js', {
+			worker = new MultiPlatformWorker('worker-basic-comm.js', {
 				autoWrapWorker: false
 			})
+			await worker.ready
 		})
 		after(async () => worker.terminate())
 
@@ -308,7 +300,7 @@ describe('MultiPlatformWorker class', () => {
 
 			var worker
 			before(async () => {
-				worker = new ProxyWorker('worker-module-setcontext.js', {
+				worker = new MultiPlatformWorker('worker-module-setcontext.js', {
 					autoWrapWorker: false
 				})
 				await worker.ready
@@ -330,7 +322,7 @@ describe('MultiPlatformWorker class', () => {
 
 			var worker
 			before(async () => {
-				worker = new ProxyWorker('worker-module-register.js', {
+				worker = new MultiPlatformWorker('worker-module-register.js', {
 					autoWrapWorker: false
 				})
 				await worker.ready
@@ -348,11 +340,11 @@ describe('MultiPlatformWorker class', () => {
 		})
 
 
-		describe('autocontext cjs', () => {
+		describe('autocontext cjs (wrapping or shimming)', () => {
 
 			var worker
 			before(async () => {
-				worker = new ProxyWorker('worker-module-cjs.js')
+				worker = new MultiPlatformWorker('worker-module-cjs.js')
 				await worker.ready
 			})
 			after(async () => worker.terminate())
@@ -368,11 +360,11 @@ describe('MultiPlatformWorker class', () => {
 		})
 
 
-		/*describe(`autocontext native esm .mjs (won't work until Node and Worker support native modules)`, () => {
+		if (isBrowser) describe(`autocontext plain 'self' globals (WebWorkers only)`, () => {
 
 			var worker
 			before(async () => {
-				worker = new ProxyWorker('worker-module-esm.js')
+				worker = new MultiPlatformWorker('worker-module-plain.js')
 				await worker.ready
 			})
 			after(async () => worker.terminate())
@@ -385,7 +377,27 @@ describe('MultiPlatformWorker class', () => {
 				assert.equal('function', await getTypeOf(worker, 'deeply.nested.echo'))
 			})
 
-		})*/
+		})
+
+
+		if (nativeWorkerModules) describe(`autocontext native esm .mjs (won't work until Node and Worker support native modules)`, () => {
+
+			var worker
+			before(async () => {
+				worker = new MultiPlatformWorker('worker-module-esm.js')
+				await worker.ready
+			})
+			after(async () => worker.terminate())
+
+			it('should locate simple methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'echo'))
+			})
+
+			it('should locate nested methods', async () => {
+				assert.equal('function', await getTypeOf(worker, 'deeply.nested.echo'))
+			})
+
+		})
 
 	})
 
@@ -397,24 +409,13 @@ describe('MultiPlatformWorker class', () => {
 
 describe('process (spawned by MultiPlatformWorker)', () => {
 
-	var worker
-/*
-	before(done => {
-		// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
-		worker = new ProxyWorker(defaultTestWorker)
-		worker.process.once('exit', code => {
-			exitCode = code
-			done()
-		})
-	})
-	it('exit code should be zero', () => {
-		assert.equal(exitCode, 0)
-	})
-*/
 	describe('properties and globals', () => {
 
 		var worker
-		before(async () => worker = new MultiPlatformWorker('worker-availchecker.js'))
+		before(async () => {
+			worker = new MultiPlatformWorker('worker-availchecker.js')
+			await worker.ready
+		})
 		after(async () => worker.terminate())
 
 		it(`'self' property should be available or shimmed`, async () => {
@@ -451,7 +452,10 @@ describe('process (spawned by MultiPlatformWorker)', () => {
 	describe('worker-master communication', () => {
 
 		var worker
-		before(async () => worker = new MultiPlatformWorker('worker-availchecker.js'))
+		before(async () => {
+			worker = new MultiPlatformWorker('worker-availchecker.js')
+			await worker.ready
+		})
 		after(async () => worker.terminate())
 
 		it('self.addEventListener() should be function', async () => {
@@ -480,42 +484,41 @@ describe('process (spawned by MultiPlatformWorker)', () => {
 			worker = new MultiPlatformWorker('worker-lifecycle.js', {
 				autoWrapWorker: false
 			})
+			await worker.ready
 		})
 
-		it('self.close() should close the worker with', async () => {
-			await onPromise(worker, 'online')
+		it('self.close() should close the worker', async () => {
 			worker.emit('kys-close')
 			await onPromise(worker, 'exit')
 			// TODO - properly test if the process is truly dead
 		})
 
-		it('process.exit() should close the worker with', async () => {
-			await onPromise(worker, 'online')
+		it('process.exit() should close the worker', async () => {
 			worker.emit('kys-process-exit')
 			await onPromise(worker, 'exit')
 			// TODO - properly test if the process is truly dead
 		})
 
 		it('self.close() should close the worker with code 0', async () => {
-			worker.on('online', () => worker.emit('kys-close'))
+			worker.emit('kys-close')
 			var code = await onPromise(worker, 'exit')
 			assert.equal(code, 0)
 		})
 
 		it('process.exit() should close the worker with code 0', async () => {
-			worker.on('online', () => worker.emit('kys-process-exit'))
+			worker.emit('kys-process-exit')
 			var code = await onPromise(worker, 'exit')
 			assert.equal(code, 0)
 		})
 
 		it('self.close(1) should close the worker with code 1', async () => {
-			worker.on('online', () => worker.emit('kys-close', 1))
+			worker.emit('kys-close', 1)
 			var code = await onPromise(worker, 'exit')
 			assert.equal(code, 1)
 		})
 
 		it('process.exit(1) should close the worker with code 1', async () => {
-			worker.on('online', () => worker.emit('kys-process-exit', 1))
+			worker.emit('kys-process-exit', 1)
 			var code = await onPromise(worker, 'exit')
 			assert.equal(code, 1)
 		})
@@ -545,18 +548,8 @@ describe('process (spawned by MultiPlatformWorker)', () => {
 */
 	})
 
-	/*it('process.kill() should kill the process', done => {
-		// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
-		var worker = new MultiPlatformWorker(defaultTestWorker)
-		worker.on('online', async () => {
-			worker.emit('kys-process-kill')
-			await timeout(400)
-			isClosed(worker)
-			done()
-		})
-	})*/
-
 	// TODO
+	//it('process.kill() should kill the process', done => {})
 
 })
 
@@ -566,11 +559,12 @@ describe('ProxyWorker class', () => {
 	describe('task invocation', () => {
 
 		// fixture worker
-		var worker, proxy
+		var worker
 		before(async () => {
-			// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
-			worker = new ProxyWorker(defaultTestWorker)
-			proxy = worker.proxy
+			worker = new ProxyWorker('worker-module-register.js', {
+				autoWrapWorker: false
+			})
+			await worker.ready
 		})
 		after(async () => worker.terminate())
 
@@ -590,32 +584,33 @@ describe('ProxyWorker class', () => {
 
 
 		it('proxy should execute simple sync methods', async () => {
-			var result = await proxy.syncHello()
+			var result = await worker.proxy.syncHello()
 			assert.equal(result, 'hello world')
 		})
 
 		it('proxy should execute simple async methods', async () => {
-			var result = await proxy.asyncHello()
+			var result = await worker.proxy.asyncHello()
 			assert.equal(result, 'hello world')
 		})
 
 		it('proxy should execute arguments and return result', async () => {
 			// returns 2+3 * 2+3
-			var result = await proxy.compute(2, 3)
+			var result = await worker.proxy.compute(2, 3)
 			assert.equal(result, 25)
 		})
 
 		it('proxy should execute nested methods', async () => {
-			var result = await proxy.deeply.nested.syncHello()
-			assert.equal(result, 'hello world')
+			var input = 'Embrace the Iris'
+			var output = await worker.proxy.deeply.nested.echo(input)
+			assert.equal(output, input)
 		})
 
 		it(`tasks should be removed from _taskResolvers after finishing`, async () => {
 			assert.isEmpty(worker._taskResolvers)
-			var promise1 = proxy.asyncHello()
+			var promise1 = worker.proxy.asyncHello()
 			assert.equal(worker._taskResolvers.size, 1)
-			var promise2 = proxy.syncHello()
-			var promise3 = proxy.echo('foo')
+			var promise2 = worker.proxy.syncHello()
+			var promise3 = worker.proxy.echo('foo')
 			assert.equal(worker._taskResolvers.size, 3)
 			await Promise.all([promise1, promise2, promise3])
 			assert.isEmpty(worker._taskResolvers)
@@ -633,8 +628,7 @@ describe('ProxyWorker class', () => {
 		// fixture worker
 		var worker, proxy
 		beforeEach(async () => {
-			// TODO - deprecate test-worker.js, break it down to smaller and more focused worker files
-			worker = new ProxyWorker(defaultTestWorker)
+			worker = new ProxyWorker('worker-transferables.js')
 			proxy = worker.proxy
 		})
 		afterEach(async () => worker.terminate())
@@ -742,17 +736,6 @@ describe('ProxyWorker class', () => {
 			assert.equal(toString(input), 'hello work!')
 			// and also returned the same sab
 			assert.equal(toString(output), 'hello work!')
-		})
-
-	})
-
-
-	describe('copying data into worker (mainly used in Node)', () => {
-
-		// TODO - add a lot of tests with Node Buffers
-
-		it(`should do something`, async () => {
-			assert.equal(true, false)
 		})
 
 	})

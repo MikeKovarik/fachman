@@ -33,6 +33,8 @@ if (isMaster) {
 			this.ready = new Promise(resolve => this.once('online', resolve))
 			// Handle closing of the thread.
 			this.once('exit', () => this.online = false)
+			
+			//this.on('error', err => console.error(err))
 		}
 
 		// Kill the worker process/thread and cleanup after that

@@ -83,6 +83,7 @@ if (isWorker) {
 			name = name.replace(/theMethod/g, path)
 			message = message.replace(/theMethod/g, path)
 			payload = {name, message, stack}
+			console.error(err)
 		}
 		process.emit('task-end', {id, status, payload})
 	}

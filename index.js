@@ -1,34 +1,32 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('path'), require('os'), require('events'), require('net'), require('child_process')) :
-	typeof define === 'function' && define.amd ? define(['exports', 'path', 'os', 'events', 'net', 'child_process'], factory) :
-	(factory((global.fachman = {}),global.path,global.os,global.events,global.net,global.child_process));
-}(this, (function (exports,path,os,events,net,child_process) { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('path'), require('events'), require('os'), require('child_process')) :
+	typeof define === 'function' && define.amd ? define(['exports', 'path', 'events', 'os', 'child_process'], factory) :
+	(factory((global.fachman = {}),global.path,global.events,global.os,global.child_process));
+}(this, (function (exports,path,events,os,child_process) { 'use strict';
 
 path = path && path.hasOwnProperty('default') ? path['default'] : path;
-os = os && os.hasOwnProperty('default') ? os['default'] : os;
 events = events && events.hasOwnProperty('default') ? events['default'] : events;
-net = net && net.hasOwnProperty('default') ? net['default'] : net;
+os = os && os.hasOwnProperty('default') ? os['default'] : os;
 
-var path$1 = path || {};
+var _path = path || {};
 
-if (!path$1.relative) {
+if (Object.keys(_path).length === 0) {
 
-	function splitSections(path$$1) {
-		path$$1 = path$$1.replace(/\\/g, '/');
-		if (path$$1.includes('://'))
-			return path$$1.slice(path$$1.indexOf('://') + 3).split('/')
-		else
-			return path$$1.split('/')
+	function splitSections(str) {
+		str = sanitizePath(str);
+		if (str.includes('://'))
+			str = str.slice(str.indexOf('://') + 3);
+		return str.split('/')
 	}
 
-	path$1.relative = function(from, to) {
-		from = splitSections(from);
-		to = splitSections(to);
-		var length = Math.min(from.length, to.length);
-		var sameParts = length;
+	/*_path.relative = function(from, to) {
+		from = splitSections(from)
+		to = splitSections(to)
+		var length = Math.min(from.length, to.length)
+		var sameParts = length
 		for (var i = 0; i < length; i++) {
 			if (from[i] !== to[i]) {
-				sameParts = i;
+				sameParts = i
 				break
 			}
 		}
@@ -36,8 +34,48 @@ if (!path$1.relative) {
 			.fill('..')
 			.concat(to.slice(sameParts))
 			.join('/')
+	}*/
+
+	_path.join = function(...args) {
+		return _path.normalize(args.join('/'))
 	};
 
+	_path.normalize = function(str) {
+		var protocol = '';
+		if (str.includes('://')) {
+			var index = str.indexOf('://');
+			protocol = str.slice(0, index + 3);
+			str = str.slice(index + 3);
+		}
+		return protocol + normalizeArray(str.split('/')).join('/')
+	};
+
+	_path.dirname = function(str) {
+		return str.substr(0, str.lastIndexOf('/'))
+	};
+
+	function normalizeArray(parts, allowAboveRoot) {
+		var res = [];
+		for (var i = 0; i < parts.length; i++) {
+			var p = parts[i];
+			if (!p || p === '.')
+				continue
+			if (p === '..') {
+				if (res.length && res[res.length - 1] !== '..')
+					res.pop();
+				else if (allowAboveRoot)
+					res.push('..');
+			} else {
+				res.push(p);
+			}
+		}
+		return res
+	}
+
+}
+
+function sanitizePath(str) {
+	return str.replace(/\\/g, '/')
 }
 
 exports.isMaster = false;
@@ -58,45 +96,22 @@ if (typeof process === 'object' && process.versions.node && process.argv.length)
 	exports.isWorker = !exports.isMaster;
 }
 
+
 if (typeof navigator === 'object') {
 	exports.isBrowser = true;
-	if (typeof importScripts === 'function')
+	if (typeof importScripts === 'function') {
 		exports.isWorker = true;
-	else if (typeof document === 'object')
+	}
+	else if (typeof document === 'object') {
 		exports.isMaster = true;
-}
-
-// Only available in node (browser's alternative is constructing blob url wrapper)
-var launchedAsWrapper = false;
-if (exports.isNode) {
-	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
-	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
-	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
-	var scriptPath = process.argv[1];
-	if (scriptPath === __filename) {
-		process.argv.splice(1,1);
-		launchedAsWrapper = true;
 	}
 }
 
 var fachmanPath;
-var fachmanRelPath;
-var fachmanDirPath;
 
-
-function trimDirPath(path$$1) {
-	return path$$1.substr(0, path$$1.lastIndexOf('/'))
-}
-function sanitizePath(path$$1) {
-	return path$$1.replace(/\\/g, '/')
-}
-
-function getUserScriptCwd() {
-	if (typeof process === 'object' && process.cwd)
-		return process.cwd()
-	else
-		return trimDirPath(location.href)
-}
+if (exports.isMaster)
+	// Absolute path to the fachman script file. Sanitize the path.
+	fachmanPath = sanitizePath(getModuleIndexPath());
 
 function getModuleIndexPath() {
 	if (typeof __filename === 'undefined')
@@ -108,18 +123,6 @@ function getModuleIndexPath() {
 		return __filename
 }
 
-if (exports.isMaster) {
-	// Sanitize the path.
-	fachmanPath = sanitizePath(getModuleIndexPath());
-	// Get current location of the app that imports fachman
-	var cwd = sanitizePath(getUserScriptCwd() + '/');
-	//
-	fachmanRelPath = path$1.relative(cwd, fachmanPath);
-	// Keep only the directory path, ignore the file.
-	fachmanDirPath = trimDirPath(fachmanPath);
-}
-
-
 // https://github.com/nodejs/node-eps/blob/master/002-es-modules.md#451-environment-variables
 var supportsNativeModules = typeof module === 'undefined'
 								&& typeof exports === 'undefined'
@@ -127,7 +130,7 @@ var supportsNativeModules = typeof module === 'undefined'
 								//&& typeof __filename === 'undefined'
 
 // Modules support in workers is a ways off for now.
-var supportsWorkerModules$1 = false;
+var supportsWorkerModules = false;
 /*
 if (isBrowser) {
 	var detectionPromise = new Promise((resolve, reject) => {
@@ -207,6 +210,25 @@ if (!exports.EventEmitter) {
 			this._map.delete(name);
 		else
 			this._map.clear();
+	};
+
+}
+
+if (exports.isBrowser && typeof global === 'undefined')
+	self.global = self;
+
+// TODO: Hide polyfilling process in master behind option (true by default)
+if (exports.isBrowser && self.process === undefined) {
+
+	// Shim 'process' object used for ipc in child.
+	// Note: shim for master does not neet to be EventEmitter, so it's not (performance reasons)
+	if (exports.isWorker)
+		self.process = new exports.EventEmitter;
+	else
+		self.process = {};
+
+	process.cwd = function() {
+		return location.href.substr(0, location.href.lastIndexOf('/'))
 	};
 
 }
@@ -424,16 +446,9 @@ function ensureTransferability(arg) {
 		return arg
 }
 
-if (exports.isBrowser && typeof global === 'undefined')
-	self.global = self;
-
 if (exports.isWorker) {
 
 	if (exports.isBrowser) {
-		// Get or shim 'process' object used for ipc in child
-		if (self.process === undefined)
-			self.process = global.process = new exports.EventEmitter;
-			//global.process = new EventEmitter
 
 		process.send = self.postMessage.bind(self);
 		process.postMessage = self.postMessage.bind(self);
@@ -454,10 +469,10 @@ if (exports.isWorker) {
 			// TODO
 		};
 		process.exit = self.close = (code = 0) => {
-			// Notify master about impending end of the thread
+			// Notify master about impending end of the thread. Arguments: exit code and signal (null if exited from inside the worker)
 			// NOTE: using postMessage({...}) instead od process.emit('exit', code) because emit would get delayed
 			//       inside EventEmitter with nextTick and wouldn't surface to parent in time. postMessage is sync.
-			self.postMessage({event: 'exit', args: [code]});
+			self.postMessage({event: 'exit', args: [code, null]});
 			// Kill the thread
 			setTimeout(originalClose);
 		};
@@ -493,30 +508,19 @@ if (exports.isWorker) {
 	// Just like emitting event into that instance will make it appear here in the worker as well.
 	routeToThread(process, process);
 
-	// Now that we've established inter-process EventEmitter...
-	// Emit 'online' event to the parent, similar to what Node cluster module does.
-	// Note: Only 'cluster' module does it, so 'child_process' and its ChildProcess we're using here
-	//       still needs us to manually fire the 'online' event
-	process.emit('online');
-
 }
 
-if (exports.isWorker) {
-	if (exports.isBrowser) {
-		console.log('polyfilling');
-		if (global.exports === undefined)
-			global.exports = {};
-		if (global.module === undefined)
-			global.module = {
-				exports: global.exports
-			};
-		var defaultContext = global.exports;
-		console.log('global.exports', global.exports);
-	} else {
-		var defaultContext = {};
-	}
-	//process.setContext = setContext
-	//process.register = register
+// Create 
+var defaultContext = {};
+
+// Shim module.exports and expots and point it to defaultContext.
+// TODO: Hide module + exports in master behind option (true by default)
+if (exports.isBrowser && exports.isWorker) {
+	if (global.exports === undefined)
+		global.exports = {};
+	if (global.module === undefined)
+		global.module = {exports: global.exports};
+	defaultContext = global.exports;
 }
 
 // Worker's is by default not wrapped (unless user bundles his code) and context points to 'self' global object.
@@ -530,37 +534,41 @@ if (exports.isBrowser)
 if (exports.isNode)
 	var fallbackContext = global;
 
+// List of contexts where we'll be location methods to execute
 var contexts = [fallbackContext, defaultContext];
 
-function setContext(customContext) {
+// Adds user-selected/created context to the list of searchable contexts
+function setContext(customContext = {}) {
 	contexts.push(customContext);
+	return customContext
 }
 
+// User can register selected methods instead of setting whole context
 function register(value, name = value.name) {
 	defaultContext[name] = value;
 }
 
 function resolvePath(path$$1) {
 	var result;
-	var context;
 	var ci = contexts.length;
 	if (path$$1.includes('.')) {
-		var sections = path$$1.split('.').reverse();
+		var pathSections = path$$1.split('.').reverse();
 		var section;
-		while (!result && --ci) {
-			context = contexts[ci];
-			let si = sections.length;
-			while (section = sections[--si])
+		while (result === undefined && ci--) {
+			let context = contexts[ci];
+			let si = pathSections.length;
+			while (si--) {
+				section = pathSections[si];
 				context = context[section];
+				if (context === undefined) break
+			}
 			result = context;
 		}
-		return result
 	} else {
-		while (!result && --ci) {
+		while (result === undefined && ci--)
 			result = contexts[ci][path$$1];
-		}
-		return result
 	}
+	return result
 }
 
 if (exports.isWorker) {
@@ -584,59 +592,86 @@ if (exports.isWorker) {
 			name = name.replace(/theMethod/g, path$$1);
 			message = message.replace(/theMethod/g, path$$1);
 			payload = {name, message, stack};
+			console.error(err);
 		}
 		process.emit('task-end', {id, status, payload});
 	}
 
+	// Now that we've established inter-process EventEmitter...
+	// Emit 'online' event to the parent, similar to what Node cluster module does.
+	// Note: Only 'cluster' module does it, so 'child_process' and its ChildProcess we're using here
+	//       still needs us to manually fire the 'online' event
+	// Note: In some cases it is critical to not emit (and subsequently using postMessage) immediately during
+	//       setup phase. It will silently throw in wrapped worker. We need to postpone 'online' event until end of event loop.
+	setTimeout(() => process.emit('online'));
+
 }
 
-if (exports.isNode && exports.isWorker && launchedAsWrapper) {
+if (exports.isNode && exports.isWorker && __filename === process.argv[1]) {
 	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
 	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
 	// Now we need to execute (by requiring) user's script he initially wanted to launch in the worker.
-	var userScriptRelPath = process.argv[1];
-	//userScriptRelPath = './test/' + userScriptRelPath
-	//userScriptRelPath = './' + userScriptRelPath
-	userScriptRelPath = sanitizePath$1(userScriptRelPath);
-	try {
-		// Try to load the path as is (it could be a whole module)
-		var ctx = require(userScriptRelPath);
-	} catch (e) {
-		// If the loading fails, add ./ and try again
-		userScriptRelPath = relativizie(userScriptRelPath);
-		var ctx = require(userScriptRelPath);
-	}
-	// Handle transpiler/bundle ES module format using 'default' key.
-	if (ctx.hasOwnProperty('default'))
-		ctx = ctx['default'];
-	// And finally set the export context of the module as fachmans lookup input.
-	setContext(ctx);
 
-	function sanitizePath$1(string) {
-		return string.replace(/\\/g, '/')
+	// Remove path to fachman from process arguments
+	process.argv.splice(1,1);
+	global.fachman = exports;
+
+	// Delay loading user script until all of fachman is loaded and interpreted.
+	// NOTE: This is necessary because rollup shoves all fachman souce files into one. This file will end up
+	//       in the middle of it and would start requiring/loading user's worker script before fachman is fully ready.
+	setTimeout(loadUserWorkerScript);
+
+	// Import user worker script
+	function loadUserWorkerScript() {
+		// We've passed path of target worker script from master process to this worker proces in arguments.
+		var userScriptRelPath = process.argv[1];
+		userScriptRelPath = sanitizePath(userScriptRelPath);
+		try {
+			// Try to load the path as is (it could be a whole module)
+			var ctx = require(userScriptRelPath);
+		} catch (e) {
+			// If the loading fails, add ./ and try again
+			userScriptRelPath = relativizie(userScriptRelPath);
+			var ctx = require(userScriptRelPath);
+		}
+		// Handle transpiler/bundle ES module format using 'default' key.
+		if (ctx.hasOwnProperty('default'))
+			ctx = ctx['default'];
+		// And finally set the export context of the module as fachmans lookup input.
+		setContext(ctx);
 	}
 
 	function relativizie(string) {
 		if (!string.startsWith('./') && !string.startsWith('../'))
 			return './' + string
 	}
+
+	process.on('unhandledRejection', reason => {
+		console.error(reason);
+	});
+
 }
 
 
-// Browser is capable of creating worker code dynamically in browser by turnin the code into blob and then to url.
+// Browser is capable of creating worker code dynamically in browser by turning the code into blob and then to url.
 
-function createBlobUrlWrapper(workerPath, options) {
-	if (options.type === 'module' && supportsWorkerModules) {
+var universalBlobUrl;
+
+function getBlobUrl(esm = false) {
+	// TODO: ES Module support when it's available in browsers
+	if (!universalBlobUrl) {
+		// Note: Relative URLs can't be used in blob worker.
+		//       Absolute paths of scripts to import has to be sent through message.
 		var code = `
-			import fachman from '${fachmanRelPath}'
-			import * as scope from '${workerPath}'
-			fachman.setScope(scope)`;
-	} else {
-		var code = `
-			importScripts('${fachmanRelPath}', '${workerPath}')
-			self.fachman.setScope(scope)`;
+			self.onmessage = e => {
+				var {fachmanPath, workerPath} = e.data
+				self.onmessage = undefined
+				importScripts(fachmanPath, workerPath)
+			}
+			`;
+		universalBlobUrl = createBlobUrl(code);
 	}
-	return createBlobUrl(code)
+	return universalBlobUrl
 }
 
 function createBlobUrl(string) {
@@ -653,16 +688,23 @@ if (exports.isMaster && exports.isBrowser) {
 	BrowserWorker = class BrowserWorker extends self.Worker {
 
 		constructor(workerPath, options = {}) {
-			console.log('BrowserWorker constructor', options.autoWrapWorker);
-			if (options.autoWrapWorker) {
-				var code = createBlobUrlWrapper(workerPath, options);
-				console.log(code);
-				super(code, options);
+			if (options.autoWrapWorker !== false) {
+				// Get or create standard custom wrapper for given worker.
+				// The code will import fachman and then the desired worker. 
+				var blobUrl = getBlobUrl(options.type === 'module');
+				super(blobUrl, options);
+				// Convert worker path into absolute path
+				if (!workerPath.includes('://'))
+					workerPath = _path.join(process.cwd(), workerPath);
+				// Relative URLs can't be used in blob workers because those have 'blob:' prefix.
+				// The blob wrapper we made earlier listens for message with fachman and actual worker path.
+				// Once that's received, the worker imports scripts and self-destructs the message and listener.
+				this.postMessage({fachmanPath, workerPath});
 			} else {
 				// Call constructor of Worker class to extends with its behavior
 				super(workerPath, options);
 			}
-			this.addEventListener('error', err => console.error(err));
+			//this.addEventListener('error', err => console.error(err))
 			// Call constructor of EventEmitter class to extends with its behavior
 			exports.EventEmitter.call(this);
 			// Following properties are here to mimic Node's ChildProcess.
@@ -763,16 +805,17 @@ if (exports.isMaster && exports.isNode) {
 			// ChildProcess constructor doesn't take any arugments. But later on it's initialized with .spawn() method.
 			super();
 			if (options.autoWrapWorker !== false) {
+				var fachmanDir = path.dirname(fachmanPath);
 				// If the user script file has .mjs ending (singaling it's written as ES Module) and Node has native support
 				// then import unbundled ES Module version of fachman.
 				var wrapperExt = options.type === 'module' && supportsNativeModules ? 'mjs' : 'js';
 				var wrapperName = `index.${wrapperExt}`;
 				// Point to the wrapper file in the root of the fachman folder (next to index).
 				// The path can be absolute because node would do that to relative paths as well.
-				var wrapperPath = path.join(fachmanDirPath, wrapperName);
+				var wrapperPath = path.join(fachmanDir, wrapperName);
 				// User's (NodeWorker in this case) defines his script to launch as a first argument.
 				var userScriptRelPath = args.shift();
-				userScriptRelPath = path.relative(fachmanDirPath, userScriptRelPath);
+				userScriptRelPath = path.relative(fachmanDir, userScriptRelPath);
 				// Prepend args with path to user script and our wrapper that will run fachman and the script.
 				args = [wrapperPath, userScriptRelPath, ...args];
 			}
@@ -868,12 +911,26 @@ if (exports.isMaster) {
 	// Subclassing native Worker or ChildProcess extension
 	exports.MultiPlatformWorker = class MultiPlatformWorker extends Parent {
 
-		constructor(workerPath, options) {
+		constructor(workerPath, options = {}) {
 			super(workerPath, options);
 			// Node does not support transferables
 			if (exports.isNode)
 				this.autoTransferArgs = false;
+			// This class inherits from two interfaces, both of which receive 'message' event (either through Node's EventEmitter
+			// or browser's EventSource interface) with custom event structure that needs to be unwrapped and exposed on this
+			// instance's (it's also EventEmitter).
 			routeToThread(this, this);
+			// The worker starts off as offline
+			this.online = false;
+			// Creating ready promise which resolves after first 'online' event, when worker is ready
+			// Warning: Don't try to wrap this into chaining promise. Worker loads synchronously
+			//          and synchronous EventEmitter callbacks would race each other over async Promise.
+			this.once('online', () => this.online = true);
+			this.ready = new Promise(resolve => this.once('online', resolve));
+			// Handle closing of the thread.
+			this.once('exit', () => this.online = false);
+			
+			//this.on('error', err => console.error(err))
 		}
 
 		// Kill the worker process/thread and cleanup after that
@@ -1008,33 +1065,17 @@ class ProxyWorker extends exports.MultiPlatformWorker {
 		}
 		// We will open user worker script which will load this library.
 		super(workerPath, options);
-		//this.worker = new MultiPlatformWorker(this.workerPath, isNode ? options : undefined, {type: 'module'})
 		// Apply options to this instance
 		Object.assign(this, options);
-		// TODO: Apply user's options
-		this._setupLifecycle();
-		this._setupTasks();
+		// Setup events and structures needed for creating tasks.
+		// List of resolvers and rejectors of unfinished promises (ongoing requests)
+		this._taskResolvers = new Map;
+		this.on('task-end', this._onTaskEnd.bind(this));
+		this.once('exit', this._onExit.bind(this));
 		// Creation of the proxy itself, intercepting calls to the proxy object
 		// and passing them into the worker.
 		this.invokeTask = this.invokeTask.bind(this);
 		this.proxy = createNestedProxy({}, this.invokeTask);
-	}
-
-	_setupLifecycle() {
-		// The worker starts off as offline
-		this.online = false;
-		// Creating ready promise which resolves after first 'online' event, when worker is ready
-		this.ready = new Promise(resolve => {
-			// Warning: Don't try to wrap this into chaining promise. Worker loads synchronously
-			//          and synchronous EventEmitter callbacks would race each other over async Promise.
-			this.once('online', () => {
-				this.online = true;
-				resolve();
-			});
-		});
-		// Handle closing of the thread and 
-		this._onExit = this._onExit.bind(this);
-		this.on('exit', this._onExit);
 	}
 
 	_onExit(code) {
@@ -1044,15 +1085,10 @@ class ProxyWorker extends exports.MultiPlatformWorker {
 		} else {
 			// Thread was abruptly killed. We might want to restart it and/or restart unfinished tasks.
 			// Note: This should not be happening to browser Workers, but only to node child processes.
+			// Note: Closed worker can't be restarted. Most online/exit/close handler use .once instead of .on,
+			//       and the class inherits from MultiPlatformWorker and that inhreits from broswer Worker which
+			//       can't be restarted (although ChildProcess might just need to call .spawn again).
 		}
-		this.online = false;
-	}
-
-	_setupTasks() {
-		// List of resolvers and rejectors of unfinished promises (ongoing requests)
-		this._taskResolvers = new Map;
-		this._onTaskEnd = this._onTaskEnd.bind(this);
-		this.on('task-end', this._onTaskEnd);
 	}
 
 	// Proxy get() handler.
@@ -1267,15 +1303,12 @@ class Cluster extends exports.EventEmitter {
 
 }
 
-//import './worker-thread.mjs'
-
-
-
 // TODO: handle SIGTERM and SIGINT in Node
 
 exports.ProxyWorker = ProxyWorker;
 exports.createTask = createTask;
 exports.Cluster = Cluster;
+exports.contexts = contexts;
 exports.setContext = setContext;
 exports.register = register;
 exports.resolvePath = resolvePath;

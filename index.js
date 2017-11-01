@@ -8,33 +8,10 @@ path = path && path.hasOwnProperty('default') ? path['default'] : path;
 events = events && events.hasOwnProperty('default') ? events['default'] : events;
 os = os && os.hasOwnProperty('default') ? os['default'] : os;
 
+// WARNING: do not rename to just plain 'path' because rollup can't handle it
 var _path = path || {};
 
 if (Object.keys(_path).length === 0) {
-
-	function splitSections(str) {
-		str = sanitizePath(str);
-		if (str.includes('://'))
-			str = str.slice(str.indexOf('://') + 3);
-		return str.split('/')
-	}
-
-	/*_path.relative = function(from, to) {
-		from = splitSections(from)
-		to = splitSections(to)
-		var length = Math.min(from.length, to.length)
-		var sameParts = length
-		for (var i = 0; i < length; i++) {
-			if (from[i] !== to[i]) {
-				sameParts = i
-				break
-			}
-		}
-		return Array(from.length - 1 - sameParts)
-			.fill('..')
-			.concat(to.slice(sameParts))
-			.join('/')
-	}*/
 
 	_path.join = function(...args) {
 		return _path.normalize(args.join('/'))
@@ -78,6 +55,7 @@ function sanitizePath(str) {
 	return str.replace(/\\/g, '/')
 }
 
+// is true if it's the main UI thread in browser, or main thread in Node
 exports.isMaster = false;
 
 // is true it it's a WebWorker or a child spawned by Node master process.
@@ -149,6 +127,7 @@ if (isBrowser) {
 }
 */
 
+// Tiny promisified version of setTimeout
 var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis));
 
 exports.MAX_THREADS = 0;
@@ -214,6 +193,7 @@ if (!exports.EventEmitter) {
 
 }
 
+// polyfill 'global'
 if (exports.isBrowser && typeof global === 'undefined')
 	self.global = self;
 
@@ -233,6 +213,12 @@ if (exports.isBrowser && self.process === undefined) {
 
 }
 
+// Routes messages from EventSource as events into EventEmitter and vice versa.
+// EE mimics simplicity of Node style Emitters and uses underlying WebWorker API
+// of posting messages. Events are carried in custom object {event, args} with name and args.
+
+
+// Browser's Worker style alias for ChildProccess.on('message', ...)
 function addEventListener(name, listener) {
 	// Only allow routing 'message' event since that's what Node process' uses for passing IPC messages
 	// as well as browser's Worker/self. All other fachman's APIs are built on top of this elsewhere.
@@ -607,6 +593,7 @@ if (exports.isWorker) {
 
 }
 
+// Only available in node (browser's alternative is constructing blob url wrapper)
 if (exports.isNode && exports.isWorker && __filename === process.argv[1]) {
 	// This very script 'fachman' has been spawned as a child process (second argument equals __filename).
 	// That means this is a worker thread and wrapping user scripts for easier context accessing is enabled.
@@ -1028,6 +1015,8 @@ var defaultOptions = {
 	type: undefined
 };
 
+// Single worker class that uses ES Proxy to pass all requests (get accesses on the proxy)
+// to the actual worker code, executes it there and waits for the woker to respond with result.
 class ProxyWorker extends exports.MultiPlatformWorker {
 
 	get runningTasks() {
@@ -1143,6 +1132,7 @@ function createTask(task = {}) {
 	return task
 }
 
+// The main hub controlling all the child workers
 class Cluster extends exports.EventEmitter {
 
 	get running() {

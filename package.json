@@ -1,6 +1,6 @@
 {
   "name": "fachman",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Sugar & shims for simple multithreading in browser and node.js",
   "scripts": {
     "build": "rollup -c",

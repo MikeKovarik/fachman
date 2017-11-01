@@ -163,7 +163,7 @@ describe('MultiPlatformWorker class', () => {
 			assert.isNull(signal)
 		})
 
-		it(`'online' property should change after 'online' and 'exit' events`, async () => {
+		it(`.online property should change after 'online' and 'exit' events`, async () => {
 			assert.isFalse(worker.online)
 			await onPromise(worker, 'online')
 			assert.isTrue(worker.online)
@@ -614,6 +614,55 @@ describe('ProxyWorker class', () => {
 			assert.equal(worker._taskResolvers.size, 3)
 			await Promise.all([promise1, promise2, promise3])
 			assert.isEmpty(worker._taskResolvers)
+		})
+
+	})
+
+
+	// NOTE: not using isFalse or isTrue because its implementation messes up proxy
+	describe('properties', () => {
+
+		var worker
+		before(async () => {
+			worker = new ProxyWorker('worker-module-cjs.js')
+			await worker.ready
+		})
+		after(async () => worker.terminate())
+
+		it(`.running should be defined`, async () => {
+			assert.isDefined(worker, 'running')
+		})
+
+		it(`.idle should be defined`, async () => {
+			assert.isDefined(worker, 'idle')
+		})
+
+		it(`.running should be initially false`, async () => {
+			assert.isDefined(worker, 'running')
+			assert.equal(worker.running, false)
+		})
+
+		it(`.idle should be initially true`, async () => {
+			assert.isDefined(worker, 'idle')
+			assert.equal(worker.running, true)
+		})
+
+		it(`.running should turn to true when task starts and then to false when it ends`, async () => {
+			assert.isDefined(worker, 'running')
+			assert.equal(worker.running, false)
+			var taskPromise = worker.proxy.asyncHello()
+			assert.equal(worker.running, true)
+			await taskPromise
+			assert.equal(worker.running, false)
+		})
+
+		it(`.idle should turn to false when task starts and then to true when it ends`, async () => {
+			assert.isDefined(worker, 'idle')
+			assert.equal(worker.running, true)
+			var taskPromise = worker.proxy.asyncHello()
+			assert.equal(worker.running, false)
+			await taskPromise
+			assert.equal(worker.running, true)
 		})
 
 	})

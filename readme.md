@@ -2,6 +2,10 @@
 
 This readme, just like the repo itself, is still very much a work in progress.
 
+Most of the basics now work (creation of browser workers an node childprocesses, the proxy for accessing methods in worker, calling them and getting promise, support for various module formats, etc...). Some tests regarding minor things are still failing (`worker.idle` does not show change when worker has running tasks), but the module should now work. As a technical preview at the least.
+
+Also more text should be added to readme and docs.
+
 # Fachman
 
 Writing multithreaded code has never been easier.
@@ -20,7 +24,7 @@ It started off as a promise returning request-response wrapper over `worker.post
 # Installation
 
 ```
-coming soon to package manager near you
+npm install fachman
 ```
 
 # Usage
@@ -365,7 +369,7 @@ If everything works out correctly, support will include [ReadableStream](https:/
 
 # TODOs
 
-* Registriy for publishing objects acessible in worker.
+* Disabling autotransfer (to unify behavior with node)
 * support for streams. Both Node and the new browers ones.
 * Durability - restart worker if it crashes/stops and restart ongoing tasks or offload them to another worker.
 * More tests.

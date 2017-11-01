@@ -6,30 +6,6 @@ var _path = native || {}
 
 if (Object.keys(_path).length === 0) {
 
-	function splitSections(str) {
-		str = sanitizePath(str)
-		if (str.includes('://'))
-			str = str.slice(str.indexOf('://') + 3)
-		return str.split('/')
-	}
-
-	/*_path.relative = function(from, to) {
-		from = splitSections(from)
-		to = splitSections(to)
-		var length = Math.min(from.length, to.length)
-		var sameParts = length
-		for (var i = 0; i < length; i++) {
-			if (from[i] !== to[i]) {
-				sameParts = i
-				break
-			}
-		}
-		return Array(from.length - 1 - sameParts)
-			.fill('..')
-			.concat(to.slice(sameParts))
-			.join('/')
-	}*/
-
 	_path.join = function(...args) {
 		return _path.normalize(args.join('/'))
 	}
